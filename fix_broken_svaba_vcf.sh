@@ -1,10 +1,11 @@
 #!/bin/bash
 
-#sample_name="409_021_DBV4V_CTCTCTAC-CTCTCTAT_L001"
-#filename="/share/ScratchGeneral/jamtor/projects/ewing_ctDNA/results/svaba/gsnap/409_021_DBV4V_CTCTCTAC-CTCTCTAT_L001/409_021_DBV4V_CTCTCTAC-CTCTCTAT_L001.svaba.unfiltered.sv.vcf"
+#sample_name="409_016_DBV4V_TAGGCATG-CTCTCTAT_L001"
+#filename="/share/ScratchGeneral/jamtor/projects/ewing_ctDNA/results/svaba/bwa/$sample_name/$sample_name.svaba.unfiltered.sv.vcf"
 
 sample_name=$1
 filename=$2
+
 in_dir="${filename%/*}"
 grep \## $filename > $in_dir/$sample_name.svaba.unfiltered.sv.formatted.vcf
 grep -v \## $filename > $in_dir/$sample_name.svaba.unfiltered.sv.temp.vcf

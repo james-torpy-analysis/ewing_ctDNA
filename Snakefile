@@ -20,7 +20,7 @@ script_dir = project_dir + 'scripts/'
 
 
 conda_dir = "/share/ClusterShare/thingamajigs/jamtor/local/lib/miniconda3/"
-env_dir = conda_dir + "envs/py37/envs/snk/bin/"
+env_dir = conda_dir + "envs/snkenv/bin/"
 
 fq_dir = 'raw_files/'
 gsnap_dir = 'results/gsnap/'
@@ -31,15 +31,23 @@ manta_dir = 'results/manta/'
 manta_bin = '/g/data1a/ku3/jt3341/local/lib/manta-1.5.0/bin/'
 
 SAMPLES = list([
-    "409_002_D9YW9_GGACTCCT-CTCTCTAT_L001"
-#    "409_001_D9YW9_TCCTGAGC-CTCTCTAT_L001", "409_002_D9YW9_GGACTCCT-CTCTCTAT_L001", 
-#    "409_003_D9YWF_AGGCAGAA-CTCTCTAT_L001", "409_004_D9YWF_GTAGAGGA-CTCTCTAT_L001", 
-#    "409_005_D9YWF_ATCTCAGG-CTCTCTAT_L001", "409_006_DB62M_GGACTCCT-CTCTCTAT_L001", "409_007_DB62M_TAGGCATG-CTCTCTAT_L001", 
-#    "409_008_DB62M_GTAGAGGA-CTCTCTAT_L001", "409_009_DB62M_GCTCATGA-CTCTCTAT_L001", "409_010_DB62M_ATCTCAGG-CTCTCTAT_L001", 
-#    "409_011_DBV4V_TAAGGCGA-CTCTCTAT_L001", "409_012_DBV4V_CGTACTAG-CTCTCTAT_L001", "409_013_DBV4V_AGGCAGAA-CTCTCTAT_L001", 
-#    "409_014_DBV4V_TCCTGAGC-CTCTCTAT_L001", "409_015_DBV4V_GGACTCCT-CTCTCTAT_L001", "409_016_DBV4V_TAGGCATG-CTCTCTAT_L001", 
-#    "409_017_DBV4V_CGAGGCTG-CTCTCTAT_L001", "409_018_DBV4V_AAGAGGCA-CTCTCTAT_L001", "409_019_DBV4V_GCTCATGA-CTCTCTAT_L001",  
-#    "409_020_DBV4V_GTAGAGGA-CTCTCTAT_L001", "409_021_DBV4V_CTCTCTAC-CTCTCTAT_L001"
+    "409_001_D9YW9_TCCTGAGC-CTCTCTAT_L001", "409_002_D9YW9_GGACTCCT-CTCTCTAT_L001", 
+    "409_003_D9YWF_AGGCAGAA-CTCTCTAT_L001", "409_004_D9YWF_GTAGAGGA-CTCTCTAT_L001", 
+    "409_005_D9YWF_ATCTCAGG-CTCTCTAT_L001", "409_006_DB62M_GGACTCCT-CTCTCTAT_L001", 
+    "409_007_DB62M_TAGGCATG-CTCTCTAT_L001", "409_008_DB62M_GTAGAGGA-CTCTCTAT_L001", 
+    "409_009_DB62M_GCTCATGA-CTCTCTAT_L001", "409_010_DB62M_ATCTCAGG-CTCTCTAT_L001", 
+    "409_011_DBV4V_TAAGGCGA-CTCTCTAT_L001", "409_012_DBV4V_CGTACTAG-CTCTCTAT_L001", 
+    "409_013_DBV4V_AGGCAGAA-CTCTCTAT_L001", "409_014_DBV4V_TCCTGAGC-CTCTCTAT_L001", 
+    "409_015_DBV4V_GGACTCCT-CTCTCTAT_L001", "409_016_DBV4V_TAGGCATG-CTCTCTAT_L001", 
+    "409_017_DBV4V_CGAGGCTG-CTCTCTAT_L001", "409_018_DBV4V_AAGAGGCA-CTCTCTAT_L001", 
+    "409_019_DBV4V_GCTCATGA-CTCTCTAT_L001",  "409_020_DBV4V_GTAGAGGA-CTCTCTAT_L001", 
+    "409_021_DBV4V_CTCTCTAC-CTCTCTAT_L001", 
+    "409_022_DCB8V_TAAGGCGA-CTCTCTAT_L001", "409_023_DCB8V_CGTACTAG-CTCTCTAT_L001",
+    "409_024_DCB8V_AGGCAGAA-CTCTCTAT_L001", "409_025_DCB8V_TCCTGAGC-CTCTCTAT_L001", 
+    "409_026_DCB8V_GGACTCCT-CTCTCTAT_L001",  "409_027_DCB8V_TAGGCATG-CTCTCTAT_L001", 
+    "409_028_DCB8V_CTCTCTAC-CTCTCTAT_L001",  "409_029_DCB8V_CGAGGCTG-CTCTCTAT_L001", 
+    "409_030_DCB8V_AAGAGGCA-CTCTCTAT_L001", "409_031_DCB8V_GTAGAGGA-CTCTCTAT_L001", 
+    "409_038_DCB8V_GCTCATGA-CTCTCTAT_L001",  "409_039_DCB8V_ATCTCAGG-CTCTCTAT_L001"
 ])
 
 #TYPE = list([
@@ -83,7 +91,7 @@ rule gsnap:
         fq2 = fq_dir + '{sample}_R2.fastq.gz'
     output:
         gsnap_dir + '{sample}/{sample}.unpaired_uniq'
-    threads: 6
+    threads: 7
     shell:
         'mkdir -p logs/gsnap; ' + 
         'cd logs/gsnap; ' + 
@@ -104,7 +112,7 @@ rule collate_bams:
             'do samtools view $f >> {output}; '
         'done;'
 
-rule bam:
+rule gsnap_bam:
     input:
         all_bam = gsnap_dir + '{sample}/{sample}.all',
         unpaired_bam = gsnap_dir + '{sample}/{sample}.unpaired_uniq'
@@ -117,7 +125,7 @@ rule bam:
         'done;'
         
 
-rule sort:
+rule gsnap_sort:
     input:
         gsnap_dir + '{sample}/{sample}.all.bam'
     output:
@@ -129,7 +137,7 @@ rule sort:
             env_dir + 'samtools sort $f > ' + '$id.sorted.bam; ' + 
         'done'
 
-rule index:
+rule gsnap_index:
     input:
         gsnap_dir + '{sample}/{sample}.all.sorted.bam'
     output:
@@ -141,7 +149,7 @@ rule index:
             'do ' + env_dir + 'samtools index $f; ' + 
         'done'
 
-rule svaba:
+rule gsnap_svaba:
    input:
        all_bam = gsnap_dir + '{sample}/{sample}.all.sorted.bam',
        all_bai = gsnap_dir + '{sample}/{sample}.all.sorted.bam.bai'
@@ -160,7 +168,7 @@ rule svaba:
             '-p 6 --override-reference-check' +
             ' 2> {wildcards.sample}.svaba.errors'
 
-rule format_vcf:
+rule gsnap_format_vcf:
     input:
         gsnap_svaba_dir + '{sample}/{sample}.svaba.unfiltered.sv.vcf'
     output:
@@ -169,23 +177,116 @@ rule format_vcf:
     shell:
         'scripts/fix_broken_svaba_vcf.sh {wildcards.sample} {input}'
 
-rule vcf_index:
+rule gsnap_vcf_index:
    input:
        filt = gsnap_svaba_dir + '{sample}/{sample}.svaba.sv.vcf',
        unfilt = gsnap_svaba_dir + '{sample}/{sample}.svaba.unfiltered.sv.formatted.vcf'
    output:
         filt = gsnap_svaba_dir + '{sample}/{sample}.svaba.sv.vcf.idx',
         unfilt = gsnap_svaba_dir + '{sample}/{sample}.svaba.unfiltered.sv.formatted.vcf.idx'
-   threads: 1
+   threads: 2
    shell:
         env_dir + 'igvtools index {input.filt}; ' + 
         env_dir + 'igvtools index {input.unfilt}'
+        
+
+######################################################################################################
+### 2. BWA ###
+######################################################################################################
+
+rule bwa:
+    input:
+        fq1 = fq_dir + '{sample}_R1.fastq.gz',
+        fq2 = fq_dir + '{sample}_R2.fastq.gz'
+    output:
+        bwa_dir + '{sample}/{sample}.sam'
+    threads: 7
+    shell:
+        'mkdir -p logs/bwa; ' + 
+        'cd logs/bwa; ' + 
+        env_dir + 'bwa mem -t 6 ' + genome_dir + 
+            'GRCh37.p13.genome.fa ../../{input.fq1} ' +
+            '../../{input.fq1} > ../../{output}; '
+
+rule bwa_bam:
+    input:
+        bwa_dir + '{sample}/{sample}.sam'
+    output:
+        bwa_dir + '{sample}/{sample}.bam'
+    threads: 1
+    shell:
+        env_dir + 'samtools view -bh {input} > {output}'
+
+rule bwa_sort:
+    input:
+        bwa_dir + '{sample}/{sample}.bam'
+    output:
+        bwa_dir + '{sample}/{sample}.sorted.bam'
+    threads: 1
+    shell:
+        env_dir + 'samtools sort {input} > {output}'
+
+rule bwa_index:
+    input:
+        bwa_dir + '{sample}/{sample}.sorted.bam'
+    output:
+        bwa_dir + '{sample}/{sample}.sorted.bam.bai'
+    threads: 1
+    shell:
+        env_dir + 'samtools index {input}'
+
+rule bwa_svaba:
+   input:
+       bam = bwa_dir + '{sample}/{sample}.sorted.bam',
+       bai = bwa_dir + '{sample}/{sample}.sorted.bam.bai'
+   output:
+       filt = bwa_svaba_dir + '{sample}/{sample}.svaba.sv.vcf',
+       unfilt = bwa_svaba_dir + '{sample}/{sample}.svaba.unfiltered.sv.vcf'
+   threads: 7
+   shell:
+       'mkdir -p logs/svaba; ' + 
+        'cd logs/svaba; ' + 
+        'mkdir -p ../../' + bwa_svaba_dir + '{wildcards.sample}/; ' +
+        'svaba run -t ' + project_dir + '{input.bam} -G ' + 
+            genome_dir + 'GRCh37.p13.genome.fa -a ../../' + 
+            bwa_svaba_dir + 
+            '{wildcards.sample}/{wildcards.sample} ' + 
+            '-p 6 --override-reference-check' +
+            ' 2> {wildcards.sample}.svaba.errors'
+
+rule bwa_format_vcf:
+    input:
+        bwa_svaba_dir + '{sample}/{sample}.svaba.unfiltered.sv.vcf'
+    output:
+        bwa_svaba_dir + '{sample}/{sample}.svaba.unfiltered.sv.formatted.vcf'
+    threads: 1
+    shell:
+        'scripts/fix_broken_svaba_vcf.sh {wildcards.sample} {input}'
+
+rule bwa_vcf_index:
+   input:
+       filt = bwa_svaba_dir + '{sample}/{sample}.svaba.sv.vcf',
+       unfilt = bwa_svaba_dir + '{sample}/{sample}.svaba.unfiltered.sv.formatted.vcf'
+   output:
+        filt = bwa_svaba_dir + '{sample}/{sample}.svaba.sv.vcf.idx',
+        unfilt = bwa_svaba_dir + '{sample}/{sample}.svaba.unfiltered.sv.formatted.vcf.idx'
+   threads: 2
+   shell:
+        env_dir + 'igvtools index {input.filt}; ' + 
+        env_dir + 'igvtools index {input.unfilt}'
+        
+
+######################################################################################################
+### 3. Clean up ###
+######################################################################################################
 
 rule cleanup:
     input:
-        svaba_ind = gsnap_svaba_dir + '{sample}/{sample}.svaba.sv.vcf.idx',
-        unfilt_svaba_ind = gsnap_svaba_dir + '{sample}/{sample}.svaba.unfiltered.sv.formatted.vcf.idx',
-        unpaired_bai = gsnap_dir + '{sample}/{sample}.unpaired_uniq.sorted.bam.bai'
+        gsnap_svaba_ind = gsnap_svaba_dir + '{sample}/{sample}.svaba.sv.vcf.idx',
+        gsnap_unfilt_svaba_ind = gsnap_svaba_dir + '{sample}/{sample}.svaba.unfiltered.sv.formatted.vcf.idx',
+        gsnap_unpaired_bai = gsnap_dir + '{sample}/{sample}.unpaired_uniq.sorted.bam.bai',
+        bwa_svaba_ind = bwa_svaba_dir + '{sample}/{sample}.svaba.sv.vcf.idx',
+        bwa_unfilt_svaba_ind = bwa_svaba_dir + '{sample}/{sample}.svaba.unfiltered.sv.formatted.vcf.idx'
     output:
         'logs/completed_jobs/{sample}_complete'
     threads: 1
@@ -194,7 +295,11 @@ rule cleanup:
         'mv ' + gsnap_dir + '{wildcards.sample}/*sorted* ' + gsnap_dir + '{wildcards.sample}/temp; ' +
         'rm -f ' + gsnap_dir + '{wildcards.sample}/*bam*; ' + 
         'mv ' + gsnap_dir + '{wildcards.sample}/temp/* ' + gsnap_dir + '{wildcards.sample}; ' +
+        'mkdir -p ' + bwa_dir + '{wildcards.sample}/temp; ' +
+        'mv ' + bwa_dir + '{wildcards.sample}/*sorted* ' + bwa_dir + '{wildcards.sample}/temp; ' +
+        'rm -f ' + bwa_dir + '{wildcards.sample}/*bam*; ' + 
+        'mv ' + bwa_dir + '{wildcards.sample}/temp/* ' + bwa_dir + '{wildcards.sample}; ' +
         'mkdir -p logs/completed_jobs; '
         'touch {output}'
-        
+
 
