@@ -120,5 +120,53 @@ fusions <- c(
 ### 3. Isolate fusion reads from bam ###
 ####################################################################################
 
+# insert header into new bam:
+system(
+  paste0(
+    "samtools view -H ", in_path, sample_name, ".uncollapsed.bam > ",
+    in_path, sample_name, ".EWSR1_FLI1_fusion.uncollapsed.sam"
+  )
+)
+
+# grep each fusion read name to put into output file:
+for (rname in fusions) {
+  system(
+    paste0(
+      "grep ", rname, " ", in_path, sample_name, ".chr11_22.uncollapsed.sam", 
+      " >> ", in_path, sample_name, ".EWSR1_FLI1_fusion.uncollapsed.sam"
+    )
+  )
+}
+
+# convert to bam:
+system(
+  paste0(
+    "samtools view -bh ", in_path, sample_name, ".EWSR1_FLI1_fusion.uncollapsed.sam > ",
+    in_path, sample_name, ".EWSR1_FLI1_fusion.uncollapsed.bam"
+  )
+)
+
+# sort and index:
+system(
+  paste0(
+    "samtools sort -o ", in_path, sample_name, ".EWSR1_FLI1_fusion.uncollapsed.sorted.bam ", 
+    in_path, sample_name, ".EWSR1_FLI1_fusion.uncollapsed.bam"
+  )
+)
+
+system(
+  paste0(
+    "samtools index ", in_path, sample_name, ".EWSR1_FLI1_fusion.uncollapsed.sorted.bam"
+  )
+)
+
+# clean up sams:
+system(
+  paste0(
+    "rm ", in_path, sample_name, ".chr11_22.uncollapsed.sam ", 
+    in_path, sample_name, ".EWSR1_FLI1_fusion.uncollapsed.sam"
+  )
+)
+
 
 
