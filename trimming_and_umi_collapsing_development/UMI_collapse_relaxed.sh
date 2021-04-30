@@ -33,6 +33,22 @@ sort_and_index () {
   samtools index $pref.sorted.bam
 }
 
+# make function to filter discordant and split reads:
+filter_discordant () {
+  pref=$(echo $1 | sed "s/\.bam//g")
+
+  sort_and_index $1
+  
+  # filter and index discordant reads:
+  samtools view -h -F 1294 $pref.sorted.bam | samtools view -bh > $pref.discordant.bam
+  samtools index $pref.discordant.bam
+
+  # filter and index split reads:
+  samtools view -h -f 2048 $pref.sorted.bam | samtools view -bh > $pref.split.bam
+  samtools index $pref.split.bam
+}
+
+
 if [ ! -f $fq_out_dir/$sample_name.withUMI.fastq ]; then
 
   printf "\n\n"
@@ -155,12 +171,15 @@ printf "\n"
 # min-map-q = minimum mapping quality required to keep reads, consider reducing if split reads are removed
 java -jar $fgbio_dir/fgbio-1.4.0-468a843-SNAPSHOT.jar GroupReadsByUmi \
   --input=$bam_dir/$sample_name.EWSR1_FLI1_fusion.uncollapsed.bam \
-  --output $int_dir/$sample_name.grouped.bam \
+  --output $int_dir/$sample_name.EWSR1_FLI1_fusion.grouped.bam \
   --strategy=Edit \
   --edits=1 \
   --min-map-q=0 \
   --include-non-pf-reads=true \
   --allow-inter-contig=true
+
+filter_discordant $bam_dir/$sample_name.EWSR1_FLI1_fusion.uncollapsed.bam
+filter_discordant $int_dir/$sample_name.EWSR1_FLI1_fusion.grouped.bam
 
 printf "\n\n"
 echo "--------------------------------------------------"

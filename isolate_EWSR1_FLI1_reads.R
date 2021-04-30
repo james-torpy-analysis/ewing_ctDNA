@@ -35,6 +35,7 @@ library(Rsamtools)
 ### 1. Isolate reads across chr11 and chr22 ###
 ####################################################################################
 
+# isolate split/discordant reads across chr11/22:
 system(
   paste0(
     "samtools view ", in_path, sample_name, 
@@ -110,9 +111,11 @@ FLI1_gr <- bam_gr[queryHits(FLI1_olaps)]
 FLI1_mate_olaps <- findOverlaps(bam_mate_gr, GOI$FLI1)
 FLI1_mate_gr <- bam_mate_gr[queryHits(FLI1_mate_olaps)]
 
-fusions <- c(
-  EWSR1_gr$rname[EWSR1_gr$rname %in% FLI1_mate_gr$rname],
-  EWSR1_mate_gr$rname[EWSR1_mate_gr$rname %in% FLI1_gr$rname]
+fusions <- unique(
+  c(
+    EWSR1_gr$rname[EWSR1_gr$rname %in% FLI1_mate_gr$rname],
+    EWSR1_mate_gr$rname[EWSR1_mate_gr$rname %in% FLI1_gr$rname]
+  )
 )
 
 
@@ -132,8 +135,9 @@ system(
 for (rname in fusions) {
   system(
     paste0(
-      "grep ", rname, " ", in_path, sample_name, ".chr11_22.uncollapsed.sam", 
-      " >> ", in_path, sample_name, ".EWSR1_FLI1_fusion.uncollapsed.sam"
+      "samtools view ", in_path, sample_name, ".uncollapsed.bam | ",
+      "grep ", rname, " >> ", 
+      in_path, sample_name, ".EWSR1_FLI1_fusion.uncollapsed.sam"
     )
   )
 }
