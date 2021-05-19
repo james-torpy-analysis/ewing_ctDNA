@@ -1,7 +1,7 @@
 #!/bin/bash
 
-#sample_name="409_005_D9YWF_ATCTCAGG-CTCTCTAT_L001"
-#filename="/share/ScratchGeneral/jamtor/projects/ewing_ctDNA/results_160321/svaba/bwa/$sample_name/$sample_name.svaba.unfiltered.sv.vcf"
+#sample_name="409_021_DBV4V_CTCTCTAC-CTCTCTAT_L001"
+#filename="/share/ScratchGeneral/jamtor/projects/ewing_ctDNA/results/svaba/bwa/markduplicates/$sample_name/$sample_name.svaba.unfiltered.sv.vcf"
 
 sample_name=$1
 filename=$2

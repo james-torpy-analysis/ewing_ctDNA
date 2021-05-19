@@ -2,7 +2,7 @@ home_dir = '/share/ScratchGeneral/jamtor/'
 project_dir = home_dir + 'projects/ewing_ctDNA/'
 fq_dir = project_dir + 'raw_files/'
 result_dir = project_dir + 'results/'
-bam_dir = result_dir + 'picard/bams/'
+bam_dir = result_dir + 'BWA_and_picard/bams/'
 
 import pysam
 import sys
