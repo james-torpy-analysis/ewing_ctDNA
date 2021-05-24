@@ -1,8 +1,8 @@
 hm_cols <- c(yes = "#F4D30B", no = "black", unknown = "grey")
 hm_na_col <- "grey"
 
-home_dir <- "/share/ScratchGeneral/jamtor/"
-#home_dir <- "/Users/torpor/clusterHome/"
+#home_dir <- "/share/ScratchGeneral/jamtor/"
+home_dir <- "/Users/torpor/clusterHome/"
 project_dir <- paste0(home_dir, "projects/ewing_ctDNA/")
 in_path <- paste0(project_dir, "results/svaba/BWA_and_picard/")
 non_collapsed_path <- paste0(project_dir, "results/svaba/non_collapsed/")

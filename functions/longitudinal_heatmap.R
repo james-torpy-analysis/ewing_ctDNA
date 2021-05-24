@@ -6,8 +6,8 @@ longitudinal_heatmap <- function(fusion_df, hm_title, type) {
     split_df <- split(fusion_df, fusion_df$Patient)
 
     condition_vec <- c(
-      "tumour", "resection", "naive", "NACT1", 
-      "NACT2", "targeted", "ACT1", "relapse", 
+      "tumour", "naive", "NACT1", "NACT2", 
+      "resection", "ACT1", "targeted", "relapse", 
       "ACT2"
     )
 
@@ -82,8 +82,8 @@ longitudinal_heatmap <- function(fusion_df, hm_title, type) {
     m <- match(condition_vec, rownames(merged_df))
     merged_df <- merged_df[m,]
     
-    # record fish results for first sample:
-    fish = merged_df$Known_EWSR1_FLI1_fusion[
+    # record FISH results for first sample:
+    FISH = merged_df$Known_EWSR1_FLI1_fusion[
       !is.na(merged_df$Known_EWSR1_FLI1_fusion)
     ][1]
     detection_df <- subset(
@@ -91,7 +91,7 @@ longitudinal_heatmap <- function(fusion_df, hm_title, type) {
       select = -c(Known_EWSR1_FLI1_fusion, False_EWSR1_fusions)
     )
     detection_df <- rbind(
-      data.frame(row.names = "fish", Detected_FLI1_EWSR1_fusion = fish),
+      data.frame(row.names = "FISH", Detected_FLI1_EWSR1_fusion = FISH),
       detection_df
     )
     
@@ -101,7 +101,7 @@ longitudinal_heatmap <- function(fusion_df, hm_title, type) {
       select = -c(Known_EWSR1_FLI1_fusion, Detected_FLI1_EWSR1_fusion)
     )
     fp_df <- rbind(
-      data.frame(row.names = "fish", False_EWSR1_fusions = NA),
+      data.frame(row.names = "FISH", False_EWSR1_fusions = NA),
       fp_df
     )
     
@@ -120,16 +120,29 @@ longitudinal_heatmap <- function(fusion_df, hm_title, type) {
 
     if (type == "patient") {
 
+      # format data to order by met and FISH status:
       hm_df$Patient <- names(hm_split)
-    
-      # group by primary/met:
       met_status <- data.frame(
         Patient = fusion_df$Patient,
         Site = fusion_df$Site
       )
       met_status <- met_status[!duplicated(met_status$Patient),]
       hm_df <- merge(hm_df, met_status, by = "Patient")
+
+      # split by primary/met:
       temp_split <- split(hm_df, hm_df$Site)
+
+      if (!all(is.na(hm_df$FISH))) {
+        temp_split <- lapply(temp_split, function(y) {
+          # make FISH column a factor with required order:
+          y$FISH <- factor(y$FISH, levels = c("yes", "no", "unknown"))
+          # order each split by FISH column:
+          y[order(y$FISH),]
+        })
+      }
+      names(temp_split) <- names(temp_split)
+
+      # bind together in met status order:
       temp_split <- list(
         temp_split$primary,
         temp_split$met,
