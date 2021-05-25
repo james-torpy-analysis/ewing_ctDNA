@@ -1,4 +1,10 @@
-hm_cols <- c(yes = "#F4D30B", no = "black", unknown = "grey")
+hm_cols <- c(
+  FISH_yes = "#75EA3D",
+  FISH_no = "#D68EB7",
+  yes = "#F4D30B", 
+  no = "black", 
+  unknown = "grey"
+)
 hm_na_col <- "grey"
 
 #home_dir <- "/share/ScratchGeneral/jamtor/"
@@ -193,7 +199,8 @@ for (i in 1:length(patient_detections)) {
           "UMI ", 
           gsub("_", " ", names(patient_detections)[i])
         ),
-        type = "patient"
+        type = "patient",
+        hm_cols = hm_cols
       )
     )
   } else {
@@ -204,7 +211,8 @@ for (i in 1:length(patient_detections)) {
         "UMI ", 
         gsub("_", "-", names(patient_detections)[i])
       ),
-      type = "patient"
+      type = "patient",
+      hm_cols = hm_cols
     )
   }
 }
@@ -225,7 +233,8 @@ for (i in 1:length(dilution_detections)) {
           "UMI ", 
           gsub("_", " ", names(dilution_detections)[i])
         ),
-        type = "dilution"
+        type = "dilution",
+        hm_cols = hm_cols
       )
     )
   } else {
@@ -236,7 +245,8 @@ for (i in 1:length(dilution_detections)) {
         "UMI ", 
         gsub("_", "-", names(dilution_detections)[i])
       ),
-      type = "dilution"
+      type = "dilution",
+      hm_cols = hm_cols
     )
   }
 }

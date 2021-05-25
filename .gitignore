@@ -22,3 +22,4 @@ dag.svg
 *.dag
 *.gistic
 *.RData
+*.csv

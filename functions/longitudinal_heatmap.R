@@ -1,4 +1,4 @@
-longitudinal_heatmap <- function(fusion_df, hm_title, type) {
+longitudinal_heatmap <- function(fusion_df, hm_title, type, hm_cols) {
   
   if (type == "patient") {
 
@@ -86,6 +86,8 @@ longitudinal_heatmap <- function(fusion_df, hm_title, type) {
     FISH = merged_df$Known_EWSR1_FLI1_fusion[
       !is.na(merged_df$Known_EWSR1_FLI1_fusion)
     ][1]
+    # make FISH entries distinct from others:
+    FISH <- paste0("FISH_", FISH)
     detection_df <- subset(
       merged_df, 
       select = -c(Known_EWSR1_FLI1_fusion, False_EWSR1_fusions)
@@ -134,10 +136,13 @@ longitudinal_heatmap <- function(fusion_df, hm_title, type) {
 
       if (!all(is.na(hm_df$FISH))) {
         temp_split <- lapply(temp_split, function(y) {
+          # change all NAs to "unknown":
+          y[is.na(y)] <- "unknown"
           # make FISH column a factor with required order:
-          y$FISH <- factor(y$FISH, levels = c("yes", "no", "unknown"))
+          y$FISH <- factor(y$FISH, levels = c("FISH_yes", "FISH_no", "unknown"))
           # order each split by FISH column:
-          y[order(y$FISH),]
+          y <- y[order(y$FISH),]
+          return(y)
         })
       }
       names(temp_split) <- names(temp_split)
@@ -167,6 +172,11 @@ longitudinal_heatmap <- function(fusion_df, hm_title, type) {
     }
     
   })
+
+  # adjust order of false positive dataframe:
+  hm_dfs$fp_df$hm_df <- hm_dfs$fp_df$hm_df[
+    rownames(hm_dfs$detection_df$hm_df),
+  ]
   
   # change all NA or 0 values in false positive df to spaces:
   final_fp <- apply(hm_dfs$fp_df$hm_df, 2, function(x) {
@@ -174,6 +184,9 @@ longitudinal_heatmap <- function(fusion_df, hm_title, type) {
     x[x == 0] <- " "
     return(x)
   })
+
+  # create treatment_split vector:
+  treatment_split <- c("FISH", rep("NOT_FISH", ncol(hm_dfs$detection_df$hm_df) - 1))
   
   # create heatmaps:
   if (type == "patient") {
@@ -181,8 +194,9 @@ longitudinal_heatmap <- function(fusion_df, hm_title, type) {
     return(
       Heatmap(
         as.matrix(hm_dfs$detection_df$hm_df), 
-        name = "fusion_detections", 
+        name = "Fusion detections", 
         row_split = hm_dfs$detection_df$met_order,
+        column_split = treatment_split,
         col = hm_cols,
         border = "black",
         rect_gp = gpar(col = "black", lwd = 1),
@@ -200,7 +214,8 @@ longitudinal_heatmap <- function(fusion_df, hm_title, type) {
     return(
       Heatmap(
         as.matrix(hm_dfs$detection_df$hm_df), 
-        name = "fusion_detections", 
+        name = "Fusion detections",
+        column_split = treatment_split, 
         col = hm_cols,
         border = "black",
         rect_gp = gpar(col = "black", lwd = 1),
