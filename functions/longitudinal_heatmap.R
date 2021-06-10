@@ -1,4 +1,10 @@
-longitudinal_heatmap <- function(fusion_df, hm_title, type, hm_cols) {
+longitudinal_heatmap <- function(
+  fusion_df, 
+  hm_title, 
+  type, 
+  hm_cols,
+  SNP_annot = FALSE
+) {
   
   if (type == "patient") {
 
@@ -32,16 +38,32 @@ longitudinal_heatmap <- function(fusion_df, hm_title, type, hm_cols) {
       empty_df <- data.frame(
         Treatment = factor(condition_vec, levels = condition_vec)
       )
-
-      merged_df <- merge(
-        empty_df,
-        subset(
+      
+      if (SNP_annot) {
+        
+        temp_sub <- subset(
+          x, 
+          select = c(
+            Treatment, Detected_FLI1_EWSR1_fusion, 
+            Known_EWSR1_FLI1_fusion, TP53_VAF, STAG2_VAF
+          )
+        )
+        
+      } else {
+        
+        temp_sub <- subset(
           x, 
           select = c(
             Treatment, Detected_FLI1_EWSR1_fusion, 
             Known_EWSR1_FLI1_fusion, False_EWSR1_fusions
           )
-        ),
+        )
+        
+      }
+      
+      merged_df <- merge(
+        empty_df,
+        temp_sub,
         by = "Treatment",
         all = T
       )
@@ -53,16 +75,32 @@ longitudinal_heatmap <- function(fusion_df, hm_title, type, hm_cols) {
       empty_df <- data.frame(
         Dilution = factor(condition_vec, levels = condition_vec)
       )
+      
+      if (SNP_annot) {
+        
+        temp_sub <- subset(
+          x, 
+          select = c(
+            Treatment, Detected_FLI1_EWSR1_fusion, 
+            Known_EWSR1_FLI1_fusion, TP53_VAF, STAG2_VAF
+          )
+        )
+        
+      } else {
+        
+        temp_sub <- subset(
+          x, 
+          select = c(
+            Treatment, Detected_FLI1_EWSR1_fusion, 
+            Known_EWSR1_FLI1_fusion, False_EWSR1_fusions
+          )
+        )
+        
+      }
 
       merged_df <- merge(
         empty_df,
-        subset(
-          x, 
-          select = c(
-            Dilution, Detected_FLI1_EWSR1_fusion, 
-            Known_EWSR1_FLI1_fusion, False_EWSR1_fusions
-          )
-        ),
+        temp_sub,
         by = "Dilution",
         all = T
       )
@@ -82,6 +120,34 @@ longitudinal_heatmap <- function(fusion_df, hm_title, type, hm_cols) {
     m <- match(condition_vec, rownames(merged_df))
     merged_df <- merged_df[m,]
     
+    if (SNP_annot) {
+      
+      # make zeros = NA:
+      merged_df$TP53_VAF[merged_df$TP53_VAF == 0] <- NA
+      merged_df$STAG2_VAF[merged_df$STAG2_VAF == 0] <- NA
+      
+      # merge SNP VAFs:
+      merged_df$SNP_VAF <- NA
+      
+      for (j in 1:nrow(merged_df)) {
+        
+        if (!is.na(merged_df$TP53_VAF[j]) & !is.na(merged_df$STAG2_VAF[j])) {
+          merged_df$SNP_VAF[j] <- paste0(
+            "TP53_", merged_df$TP53_VAF[j], "_STAG2_", merged_df$STAG2_VAF[j]
+          )
+        } else if (!is.na(merged_df$TP53_VAF[j]) & is.na(merged_df$STAG2_VAF[j])) {
+          merged_df$SNP_VAF[j] <- paste0("TP53_", merged_df$TP53_VAF[j])
+        } else if (is.na(merged_df$TP53_VAF[j]) & !is.na(merged_df$STAG2_VAF[j])) {
+          merged_df$SNP_VAF[j] <- paste0("STAG2_", merged_df$STAG2_VAF[j])
+        }
+        
+      }
+      
+      # remove individual SNP_VAF columns:
+      merged_df <- subset(merged_df, select = -c(TP53_VAF, STAG2_VAF))
+      
+    }
+
     # record FISH results for first sample:
     FISH = merged_df$Known_EWSR1_FLI1_fusion[
       !is.na(merged_df$Known_EWSR1_FLI1_fusion)
@@ -90,29 +156,35 @@ longitudinal_heatmap <- function(fusion_df, hm_title, type, hm_cols) {
     FISH <- paste0("FISH_", FISH)
     detection_df <- subset(
       merged_df, 
-      select = -c(Known_EWSR1_FLI1_fusion, False_EWSR1_fusions)
+      select = Detected_FLI1_EWSR1_fusion
     )
     detection_df <- rbind(
       data.frame(row.names = "FISH", Detected_FLI1_EWSR1_fusion = FISH),
       detection_df
     )
     
-    # create a false positive df in parallel:
-    fp_df <- subset(
+    # create a SNP df in parallel:
+    annot_df <- subset(
       merged_df, 
       select = -c(Known_EWSR1_FLI1_fusion, Detected_FLI1_EWSR1_fusion)
     )
-    fp_df <- rbind(
-      data.frame(row.names = "FISH", False_EWSR1_fusions = NA),
-      fp_df
+    temp_bind <- as.data.frame(
+      t(data.frame(rep(NA, ncol(annot_df))))
+    )
+    colnames(temp_bind) <- colnames(annot_df)
+    rownames(temp_bind) <- "FISH"
+    annot_df <- rbind(
+      temp_bind,
+      annot_df
     )
     
-    return(list(detection_df = detection_df, fp_df = fp_df))
+    return(list(detection_df = detection_df, annot_df = annot_df))
     
   })
+  
   both_split <- list(
     detection_df = lapply(hm_split, function(x) x$detection_df),
-    fp_df = lapply(hm_split, function(x) x$fp_df)
+    annot_df = lapply(hm_split, function(x) x$annot_df)
   )
   
   # bind together:
@@ -173,17 +245,27 @@ longitudinal_heatmap <- function(fusion_df, hm_title, type, hm_cols) {
     
   })
 
-  # adjust order of false positive dataframe:
-  hm_dfs$fp_df$hm_df <- hm_dfs$fp_df$hm_df[
+  # adjust order of annot dataframe:
+  hm_dfs$annot_df$hm_df <- hm_dfs$annot_df$hm_df[
     rownames(hm_dfs$detection_df$hm_df),
   ]
   
   # change all NA or 0 values in false positive df to spaces:
-  final_fp <- apply(hm_dfs$fp_df$hm_df, 2, function(x) {
+  final_annot <- apply(hm_dfs$annot_df$hm_df, 2, function(x) {
     x[is.na(x)] <- " "
     x[x == 0] <- " "
     return(x)
   })
+  
+  if (SNP_annot) {
+    
+    # remove underscores from SNP annotations:
+    final_annot <- gsub(
+      "_", "\n", 
+      gsub("_STAG2", "\nSTAG2", final_annot)
+    )
+    
+  }
 
   # create treatment_split vector:
   treatment_split <- c("FISH", rep("NOT_FISH", ncol(hm_dfs$detection_df$hm_df) - 1))
@@ -191,42 +273,88 @@ longitudinal_heatmap <- function(fusion_df, hm_title, type, hm_cols) {
   # create heatmaps:
   if (type == "patient") {
 
-    return(
-      Heatmap(
-        as.matrix(hm_dfs$detection_df$hm_df), 
-        name = "Fusion detections", 
-        row_split = hm_dfs$detection_df$met_order,
-        column_split = treatment_split,
-        col = hm_cols,
-        border = "black",
-        rect_gp = gpar(col = "black", lwd = 1),
-        column_title = hm_title,
-        cell_fun = function(j, i, x, y, width, height, fill) {
-          grid.text(
-            final_fp[i, j], x, y, gp = gpar(fontsize = 10, col = "red")
-          )
-        }
+    if (SNP_annot) {
+      return(
+        Heatmap(
+          as.matrix(hm_dfs$detection_df$hm_df), 
+          name = "Fusion detections", 
+          row_split = hm_dfs$detection_df$met_order,
+          column_split = treatment_split,
+          col = hm_cols,
+          border = "black",
+          rect_gp = gpar(col = "black", lwd = 1),
+          column_title = hm_title,
+          cell_fun = function(j, i, x, y, width, height, fill) {
+            grid.text(
+              final_annot[i, j], x, y, gp = gpar(
+                fontsize = 5, fontface = "bold", col = "red"
+              )
+            )
+          }
+        )
       )
-    )
+    } else {
+      return(
+        Heatmap(
+          as.matrix(hm_dfs$detection_df$hm_df), 
+          name = "Fusion detections", 
+          row_split = hm_dfs$detection_df$met_order,
+          column_split = treatment_split,
+          col = hm_cols,
+          border = "black",
+          rect_gp = gpar(col = "black", lwd = 1),
+          column_title = hm_title,
+          cell_fun = function(j, i, x, y, width, height, fill) {
+            grid.text(
+              final_annot[i, j], x, y, gp = gpar(fontsize = 10, col = "red")
+            )
+          }
+        )
+      )
+    }
+    
 
   } else if (type == "dilution") {
 
-    return(
-      Heatmap(
-        as.matrix(hm_dfs$detection_df$hm_df), 
-        name = "Fusion detections",
-        column_split = treatment_split, 
-        col = hm_cols,
-        border = "black",
-        rect_gp = gpar(col = "black", lwd = 1),
-        column_title = hm_title,
-        cell_fun = function(j, i, x, y, width, height, fill) {
-          grid.text(
-            final_fp[i, j], x, y, gp = gpar(fontsize = 10, col = "red")
-          )
-        }
+    if (SNP_annot) {
+      return(
+        Heatmap(
+          as.matrix(hm_dfs$detection_df$hm_df), 
+          name = "Fusion detections", 
+          row_split = hm_dfs$detection_df$met_order,
+          column_split = treatment_split,
+          col = hm_cols,
+          border = "black",
+          rect_gp = gpar(col = "black", lwd = 1),
+          column_title = hm_title,
+          cell_fun = function(j, i, x, y, width, height, fill) {
+            grid.text(
+              final_annot[i, j], x, y, gp = gpar(
+                fontsize = 5, fontface = "bold", col = "red"
+              )
+            )
+          }
+        )
       )
-    )
+    } else {
+      return(
+        Heatmap(
+          as.matrix(hm_dfs$detection_df$hm_df), 
+          name = "Fusion detections", 
+          row_split = hm_dfs$detection_df$met_order,
+          column_split = treatment_split,
+          col = hm_cols,
+          border = "black",
+          rect_gp = gpar(col = "black", lwd = 1),
+          column_title = hm_title,
+          cell_fun = function(j, i, x, y, width, height, fill) {
+            grid.text(
+              final_annot[i, j], x, y, gp = gpar(fontsize = 10, col = "red")
+            )
+          }
+        )
+      )
+    }
 
   }
     

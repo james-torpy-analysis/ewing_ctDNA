@@ -3,7 +3,7 @@
 source ~/.bashrc
 
 sample_name=$1
-#sample_name="409_018_DBV4V_AAGAGGCA-CTCTCTAT_L001"
+#sample_name="409_002_D9YW9_GGACTCCT-CTCTCTAT_L001"
 
 printf "\n\n"
 echo "sample name is $sample_name"
@@ -165,7 +165,7 @@ samtools view -h -F 1294 $int_dir/$sample_name.markdups.bam | \
   samtools view -bh > $int_dir/$sample_name.markdups.discordant.bam
 samtools index $int_dir/$sample_name.markdups.discordant.bam
 
-# filtee split reads:
+# filter split reads:
 samtools view -h -f 2048 $int_dir/$sample_name.markdups.bam | \
   samtools view -bh > $int_dir/$sample_name.markdups.split.bam
   samtools index $int_dir/$sample_name.markdups.split.bam
@@ -202,6 +202,7 @@ samtools index $bam_dir/$sample_name.consensus.discordant.bam
 samtools view -h -f 2048 $bam_dir/$sample_name.consensus.bam | \
   samtools view -bh > $bam_dir/$sample_name.consensus.split.bam
 samtools index $bam_dir/$sample_name.consensus.split.bam
+
 
 
 

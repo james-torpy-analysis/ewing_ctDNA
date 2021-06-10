@@ -2,7 +2,8 @@ find_EWSR1_FLI1_fusions <- function(
   breakpoints, 
   GOI_list, 
   patient_df, 
-  dilution_df
+  dilution_df,
+  binary_calls = FALSE
 ) {
 
   # load function and define GOI regions:

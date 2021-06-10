@@ -159,7 +159,6 @@ if (!file.exists(paste0(Robject_dir, "EWSR1_GOI_fusions.Rdata"))) {
       dilution_df
     )
   })
-    
   
   # save EWSR1 fusions:
   saveRDS(
@@ -184,7 +183,7 @@ summary_tables <- lapply(fusion_results, function(x) {
 ### 3. Create longitudinal heatmaps ###
 ####################################################################################
 
-# patient heatmaps:
+# patient heatmaps with false positive annotation:
 patient_detections <- lapply(fusion_results, function(x) {
   lapply(x, function(y) y$fusion_nos$patient_df)
 })
@@ -192,7 +191,34 @@ patient_detections <- lapply(fusion_results, function(x) {
 for (i in 1:length(patient_detections)) {
   if (i==1) {
     patient_heatmaps <- list(
-      lapply(
+      list(
+        false_annot = lapply(
+          patient_detections[[i]], 
+          longitudinal_heatmap,
+          hm_title = paste0(
+            "UMI ", 
+            gsub("_", " ", names(patient_detections)[i])
+          ),
+          type = "patient",
+          hm_cols = hm_cols,
+          SNP_annot = FALSE
+        ),
+        short_variant_annot = lapply(
+          patient_detections[[i]], 
+          longitudinal_heatmap,
+          hm_title = paste0(
+            "UMI ", 
+            gsub("_", " ", names(patient_detections)[i])
+          ),
+          type = "patient",
+          hm_cols = hm_cols,
+          SNP_annot = TRUE
+        )
+      )
+    )
+  } else {
+    patient_heatmaps[[i]] <- list(
+      false_annot = lapply(
         patient_detections[[i]], 
         longitudinal_heatmap,
         hm_title = paste0(
@@ -200,19 +226,20 @@ for (i in 1:length(patient_detections)) {
           gsub("_", " ", names(patient_detections)[i])
         ),
         type = "patient",
-        hm_cols = hm_cols
-      )
-    )
-  } else {
-    patient_heatmaps[[i]] <- lapply(
-      patient_detections[[i]], 
-      longitudinal_heatmap,
-      hm_title = paste0(
-        "UMI ", 
-        gsub("_", "-", names(patient_detections)[i])
+        hm_cols = hm_cols,
+        SNP_annot = FALSE
       ),
-      type = "patient",
-      hm_cols = hm_cols
+      short_variant_annot = lapply(
+        patient_detections[[i]], 
+        longitudinal_heatmap,
+        hm_title = paste0(
+          "UMI ", 
+          gsub("_", " ", names(patient_detections)[i])
+        ),
+        type = "patient",
+        hm_cols = hm_cols,
+        SNP_annot = TRUE
+      )
     )
   }
 }

@@ -33,8 +33,8 @@ rmarkdown::render("/share/ScratchGeneral/jamtor/projects/ewing_ctDNA/scripts/fin
   )
   hm_na_col <- "grey"
   
-  #home_dir <- "/share/ScratchGeneral/jamtor/"
-  home_dir <- "/Users/torpor/clusterHome/"
+  home_dir <- "/share/ScratchGeneral/jamtor/"
+  #home_dir <- "/Users/torpor/clusterHome/"
   project_dir <- paste0(home_dir, "projects/ewing_ctDNA/")
   in_path <- paste0(project_dir, "results/svaba/BWA_and_picard/")
   non_collapsed_path <- paste0(project_dir, "results/svaba/non_collapsed/")
@@ -209,15 +209,17 @@ rmarkdown::render("/share/ScratchGeneral/jamtor/projects/ewing_ctDNA/scripts/fin
   ### 3. Create longitudinal patient heatmap ###
   ####################################################################################
   
-  # patient heatmaps:
-  patient_detections <- lapply(fusion_results, function(x) {
-    lapply(x, function(y) y$fusion_nos$patient_df)
-  })
-  
-  for (i in 1:length(patient_detections)) {
-    if (i==1) {
-      patient_heatmaps <- list(
-        lapply(
+ 
+# patient heatmaps with false positive annotation:
+patient_detections <- lapply(fusion_results, function(x) {
+  lapply(x, function(y) y$fusion_nos$patient_df)
+})
+
+for (i in 1:length(patient_detections)) {
+  if (i==1) {
+    patient_heatmaps <- list(
+      list(
+        false_annot = lapply(
           patient_detections[[i]], 
           longitudinal_heatmap,
           hm_title = paste0(
@@ -225,23 +227,50 @@ rmarkdown::render("/share/ScratchGeneral/jamtor/projects/ewing_ctDNA/scripts/fin
             gsub("_", " ", names(patient_detections)[i])
           ),
           type = "patient",
-          hm_cols = hm_cols
+          hm_cols = hm_cols,
+          SNP_annot = FALSE
+        ),
+        short_variant_annot <- lapply(
+          patient_detections[[i]], 
+          longitudinal_heatmap,
+          hm_title = paste0(
+            "UMI ", 
+            gsub("_", " ", names(patient_detections)[i])
+          ),
+          type = "patient",
+          hm_cols = hm_cols,
+          SNP_annot = TRUE
         )
       )
-    } else {
-      patient_heatmaps[[i]] <- lapply(
+    )
+  } else {
+    patient_heatmaps[[i]] <- list(
+      false_annot = lapply(
         patient_detections[[i]], 
         longitudinal_heatmap,
         hm_title = paste0(
           "UMI ", 
-          gsub("_", "-", names(patient_detections)[i])
+          gsub("_", " ", names(patient_detections)[i])
         ),
         type = "patient",
-        hm_cols = hm_cols
+        hm_cols = hm_cols,
+        SNP_annot = FALSE
+      ),
+      short_variant_annot <- lapply(
+        patient_detections[[i]], 
+        longitudinal_heatmap,
+        hm_title = paste0(
+          "UMI ", 
+          gsub("_", " ", names(patient_detections)[i])
+        ),
+        type = "patient",
+        hm_cols = hm_cols,
+        SNP_annot = TRUE
       )
-    }
+    )
   }
-  names(patient_heatmaps) <- names(patient_detections)
+}
+names(patient_heatmaps) <- names(patient_detections)
   
   # dilution heatmaps:
   dilution_detections <- lapply(fusion_results, function(x) {
@@ -280,16 +309,29 @@ rmarkdown::render("/share/ScratchGeneral/jamtor/projects/ewing_ctDNA/scripts/fin
 ```
 
 ### Patient fusion detection heatmaps:
-#### High confidence detections:
+#### High confidence detections with false positives marked:
 ```{r, fig.show="hold", out.width="50%", echo = FALSE}
-  patient_heatmaps$non_collapsed$high_conf_bp
-  patient_heatmaps$collapsed$high_conf_bp
+  patient_heatmaps$non_collapsed$false_annot$high_conf_bp
+  patient_heatmaps$collapsed$false_annot$high_conf_bp
 ```
 
-#### All detections:
+#### All detections with false positives marked:
 ```{r, fig.show="hold", out.width="50%", echo = FALSE}
-  patient_heatmaps$non_collapsed$low_conf_bp
-  patient_heatmaps$collapsed$low_conf_bp
+  patient_heatmaps$non_collapsed$false_annot$low_conf_bp
+  patient_heatmaps$collapsed$false_annot$low_conf_bp
+```
+
+### Patient fusion detection heatmaps:
+#### High confidence detections with short variant VAFs marked:
+```{r, fig.show="hold", out.width="50%", echo = FALSE}
+  patient_heatmaps$non_collapsed$false_annot$high_conf_bp
+  patient_heatmaps$collapsed$false_annot$high_conf_bp
+```
+
+#### All detections with short variant VAFs marked:
+```{r, fig.show="hold", out.width="50%", echo = FALSE}
+  patient_heatmaps$non_collapsed$short_variant_annot$low_conf_bp
+  patient_heatmaps$collapsed$short_variant_annot$low_conf_bp
 ```
 <br />
 
