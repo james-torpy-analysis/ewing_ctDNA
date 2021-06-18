@@ -100,6 +100,13 @@ SAMPLES = list([
 #rule all:
 #    input:
 #        expand(
+#            align_dir + '{sample}/{sample}.consensus.bam.bai',
+#            sample = SAMPLES
+#        )
+
+#rule all:
+#    input:
+#        expand(
 #            svaba_dir + '{sample}/{sample}.svaba.unfiltered.sv.formatted.vcf.idx',
 #            sample=SAMPLES
 #        )

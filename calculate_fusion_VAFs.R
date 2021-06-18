@@ -26,6 +26,7 @@ library(Rsamtools)
 library(rtracklayer)
 library(GenomicRanges)
 library(ggvenn)
+library(parallel)
 
 find_overlapping_reads <- dget(paste0(func_dir, "find_overlapping_reads.R"))
 filter_overlaps <- dget(paste0(func_dir, "filter_overlaps.R"))
@@ -75,7 +76,9 @@ param <- ScanBamParam(
   )
 )
 
-if (!file.exists(paste0(Robject_dir, "VAF_calculation_bams.Rdata"))) {
+if (!file.exists(paste0(Robject_dir, "VAF_calculation_bams_all_chr.Rdata"))) {
+  
+  # unfilt_bams <- readRDS(paste0(Robject_dir, "custom_sub.Rdata"))
   
   # load in bam, split bam and discordant bam as GRanges:
   unfilt_bams <- lapply(samplenames, function(x) {
@@ -104,19 +107,24 @@ if (!file.exists(paste0(Robject_dir, "VAF_calculation_bams.Rdata"))) {
         qual= bam_obj[[1]]$qual
       )
       
-      ######
-      #gr <- gr[1:floor(length(gr)/10)]
-      ######
-      
       return(gr)
-
+      
     })
     
   })
   names(unfilt_bams) <- samplenames
   
+  # initiate cluster:
+  cl <- makeCluster(7)
+  clusterExport(
+    cl, varlist = c(
+      "unfilt_bams", "filter_multimappers", 
+      "filter_max_supp_align", "filter_supp_only"
+    )
+  )
+  
   # filter bams:
-  bams <- lapply(unfilt_bams, function(x) {
+  temp_bams <- parLapply(cl, unfilt_bams, function(x) {
     
     return(
       lapply(x, function(y) {
@@ -135,25 +143,41 @@ if (!file.exists(paste0(Robject_dir, "VAF_calculation_bams.Rdata"))) {
               return(length(which(z$flag >= 2000)) <= filter_max_supp_align)
             })
           ]
+          y <- unlist(filt_spl)
         }
         
         if (filter_supp_only) {
+          
           # remove reads with only supplementary alignments:
           spl <- split(y, y$qname)
           filt_spl <- spl[
-            sapply(spl, function(z) {
-              return(length(which(z$flag < 2000)) <= 1)
+            !sapply(spl, function(z) {
+              return(all(z$flag >= 2000))
             })
           ]
+          y <- unlist(filt_spl)
         }
         
-        return(unlist(filt_spl))
+        names(y) <- NULL
+        
+        return(y)
         
       })
     )
     
   })
+  stopCluster(cl)
+  
+  # remove split or multimapping reads not in 'all':
+  bams <- temp_bams
+  for (i in 1:length(temp_bams)) {
+    for (j in 1:length(temp_bams[[i]])) {
+      bams[[i]][[j]] <- bams[[i]][[j]][bams[[i]][[j]]$qname %in% bams[[i]]$all$qname]
+    }
+  }
+  
   saveRDS(bams, paste0(Robject_dir, "filtered_bams.Rdata"))
+  
   
   ####################################################################################
   ### 2. Split reads into groups and plot ###
@@ -248,10 +272,12 @@ if (!file.exists(paste0(Robject_dir, "VAF_calculation_bams.Rdata"))) {
     
   }
   
-  saveRDS(bams, paste0(Robject_dir, "VAF_calculation_bams.Rdata"))
+  saveRDS(unfilt_bams, paste0(Robject_dir, "unfiltered_bams.Rdata"))
+  saveRDS(bams, paste0(Robject_dir, "VAF_calculation_bams_all_chr.Rdata"))
   
 } else {
-  bams <- readRDS(paste0(Robject_dir, "VAF_calculation_bams.Rdata"))
+  unfilt_bams <- readRDS(paste0(Robject_dir, "unfiltered_bams.Rdata"))
+  bams <- readRDS(paste0(Robject_dir, "VAF_calculation_bams_all_chr.Rdata"))
 }
 
 # create venn diagram of filtered vs unfiltered reads:
@@ -383,85 +409,182 @@ names(all_singles) <- names(bams)
 
 all_singles_venns <- lapply(all_singles, create_venn, venn_cols)
 
+for (i in 1:length(bams)) {
+  
+  if (i==1) {
+    split_bam <- list(
+      list(
+        all = bams[[i]]$all, 
+        split_primary = bams[[i]]$split_primary, 
+        split_supp = bams[[i]]$split
+      )
+    )
+  } else {
+    split_bam[[i]] <- list(
+      all = bams[[i]]$all, 
+      split_primary = bams[[i]]$split_primary, 
+      split_supp = bams[[i]]$split
+    )
+  }
+  
+}
+names(split_bam) <- names(bams)
+
+split_venns <- lapply(split_bam, create_venn, venn_cols)
+
 
 ####################################################################################
 ### 2. Isolate relevant reads and plot ###
 ####################################################################################
 
-# select relevant groups only:
-fbams <- lapply(bams, function(x) {
+if (!file.exists(paste0(Robject_dir, "VAF_calculation_bams.Rdata"))) {
   
-  if (filter_singles) {
+  # select relevant groups only:
+  fbams <- lapply(bams, function(x) {
     
-    writeLines("\n")
-    
-    res <- list(
-      split_primary = x$pairs$split_primary,
-      split_supp = x$singles$split,
-      discordant = x$pairs$discordant,
-      non_split_or_discordant = x$pairs$non_discordant_or_split
-    )
-    
-    # remove supplementary split reads not in primary split read pairs:
-    res$split_supp <- res$split_supp[
-      res$split_supp$qname %in% res$split_primary$qname
-    ]
-    
-    print(
-      paste0(
-        "Does the number of supplementary split alignments (", 
-        length(res$split_supp),
-        ") equal half the number of primary split pair alignments (",
-        length(res$split_primary), ")? ",
-        length(res$split_supp) == (length(res$split_primary))/2
+    if (filter_singles) {
+      
+      writeLines("\n")
+      
+      res <- list(
+        split_primary = x$pairs$split_primary,
+        split_supp = x$singles$split,
+        discordant = x$pairs$discordant,
+        non_split_or_discordant = x$pairs$non_discordant_or_split
       )
-    )
-    
-    return(res)
-    
-  } else {
-    
-    res <- list(
-      split_primary = c(x$pairs$split_primary, x$singles$split_primary),
-      split_supp = x$singles$split,
-      discordant = c(x$pairs$discordant, x$singles$discordant),
-      non_split_or_discordant = c(
-        x$pairs$non_discordant_or_split, x$singles$non_discordant_or_split
+      
+      # remove supplementary split reads not in primary split read pairs:
+      res$split_supp <- res$split_supp[
+        res$split_supp$qname %in% res$split_primary$qname
+      ]
+      
+      print(
+        paste0(
+          "Does the number of supplementary split alignments (", 
+          length(res$split_supp),
+          ") equal half the number of primary split pair alignments (",
+          length(res$split_primary), ")? ",
+          length(res$split_supp) == (length(res$split_primary))/2
+        )
       )
-    )
+      
+      return(res)
+      
+    } else {
+      
+      res <- list(
+        split_primary = c(x$pairs$split_primary, x$singles$split_primary),
+        split_supp = x$singles$split,
+        discordant = c(x$pairs$discordant, x$singles$discordant),
+        non_split_or_discordant = c(
+          x$pairs$non_discordant_or_split, x$singles$non_discordant_or_split
+        )
+      )
+      
+      # remove supplementary split reads not in primary split read pairs:
+      res$split_supp <- res$split_supp[
+        res$split_supp$qname %in% res$split_primary$qname
+      ]
+      
+      return(res)
+      
+    }
     
-    # remove supplementary split reads not in primary split read pairs:
-    res$split_supp <- res$split_supp[
-      res$split_supp$qname %in% res$split_primary$qname
-    ]
-    
-    return(res)
-    
-  }
-  
-})
-
-# isolate reads mapping to either chr11 or 22:
-fbams <- lapply(fbams, function (x) {
-  lapply(x, function(y) {
-    spl <- split(y, y$qname)
-    keep <- lapply(spl, function(z) {
-      if (all(seqnames(z) %in% c("chr11", "chr22"))) {
-        return(z)
-      } else {
-        return(NULL)
-      }
-    })
-    # remove NULLs:
   })
-})
 
-
-
-
-######
+  # initiate cluster:
+  cl <- makeCluster(7)
+  clusterExport(cl, varlist = c("fbams"))
+  
+  # isolate reads mapping to either chr11 or 22:
+  fbams <- parLapply(cl, fbams, function (x) {
+    
+    res <- lapply(x, function(y) {
+      
+      spl <- split(y, y$qname)
+      keep <- lapply(spl, function(z) {
+        if (all(seqnames(z) %in% c("chr11", "chr22"))) {
+          return(z)
+        } else {
+          return(NULL)
+        }
+      })
+      # remove NULLs:
+      keep <- keep[sapply(keep, function(x) !is.null(x))]
+      return(unlist(as(keep, "GRangesList")))
+      
+    })
+    
+    return(res)
+    
+  })
+  stopCluster(cl)
+  
+  saveRDS(fbams, paste0(Robject_dir, "VAF_calculation_bams.Rdata"))
+  
+} else {
+  fbams <- readRDS(paste0(Robject_dir, "VAF_calculation_bams.Rdata"))
+}
 
 # create venn diagrams of chr11/22 read breakdowns:
+for (i in 1:length(fbams)) {
+  
+  if (i==1) {
+    all_fbam <- list(
+      list(
+        all = unlist(as(fbams[[i]], "GRangesList")), 
+        split_primary = fbams[[i]]$split_primary, 
+        split_supp = fbams[[i]]$split_supp,
+        discordant = fbams[[i]]$discordant, 
+        non_split_or_discordant = fbams[[i]]$non_split_or_discordant
+      )
+    )
+  } else {
+    all_fbam[[i]] <- list(
+      all = unlist(as(fbams[[i]], "GRangesList")), 
+      split_primary = fbams[[i]]$split_primary, 
+      split_supp = fbams[[i]]$split_supp,
+      discordant = fbams[[i]]$discordant, 
+      non_split_or_discordant = fbams[[i]]$non_split_or_discordant
+    )
+  }
+  
+}
+names(all_fbam) <- names(fbams)
+
+fbam_venns <- lapply(all_fbam, create_venn, venn_cols)
+
+for (i in 1:length(fbams)) {
+  
+  if (i==1) {
+    split_fbam <- list(
+      list(
+        all = unlist(as(fbams[[i]], "GRangesList")), 
+        split_primary = fbams[[i]]$split_primary, 
+        split_supp = fbams[[i]]$split_supp
+      )
+    )
+  } else {
+    split_fbam[[i]] <- list(
+      all = unlist(as(fbams[[i]], "GRangesList")), 
+      split_primary = fbams[[i]]$split_primary, 
+      split_supp = fbams[[i]]$split_supp
+    )
+  }
+  
+}
+names(split_fbam) <- names(fbams)
+
+split_fbam_venns <- lapply(split_fbam, create_venn, venn_cols)
+
+
+
+
+
+
+
+
+
 fusion_gene_venns <- lapply(fbams, create_venn, venn_cols)
 
 chr11_22_venn_vectors <- lapply(chr11_22_read_vectors, function(x) {
@@ -507,7 +630,7 @@ for (i in 1:length(chr22_fusions)) {
     reads = bams[[i]]$non_discordant_or_split,
     chromosome = "chr22"
   )
- 
+  
 }
 names(non_supporting_reads) <- names(chr22_fusions)
 
@@ -617,7 +740,7 @@ if (paste0(Robject_dir, "non_discordant_or_split_read_gaps.Rdata")) {
   #system.time(non_discordant_or_split_gaps <- lapply(bams, fetch_mate_gaps))
   # took 2 hours on Rstudio with 3 cores, 1 hour 20 on cluster with 5 cores:
   system.time(non_discordant_or_split_gaps <- parLapply(cl, bams, fetch_mate_gaps)) 
-
+  
   
   saveRDS(
     non_discordant_or_split_gaps, 
@@ -656,3 +779,122 @@ if (paste0(Robject_dir, "non_discordant_or_split_read_gaps.Rdata")) {
 
 # calculate supporting vs non-supporting proportion:
 
+
+######
+
+# subset bam list:
+unfilt_sub <- list(
+  unfilt_bams[[5]]$all[
+    unfilt_bams[[5]]$all$qname %in% c(
+      "M00859:387:000000000-DBV4V:1:1101:10001:6284",
+      "M00859:387:000000000-DBV4V:1:1101:10002:17091",
+      "M00859:387:000000000-DBV4V:1:1101:10002:18912",
+      "M00859:387:000000000-DBV4V:1:1101:10002:21024",
+      "M00859:387:000000000-DBV4V:1:1101:10003:9222",
+      "M00859:387:000000000-DBV4V:1:1101:10004:15255",
+      "M00859:387:000000000-DBV4V:1:1101:10055:20705",
+      "M00859:387:000000000-DBV4V:1:1101:10270:26190",
+      "M00859:387:000000000-DBV4V:1:1101:10322:3906",
+      "M00859:387:000000000-DBV4V:1:1101:10360:10038",
+      "M00859:387:000000000-DBV4V:1:1101:10583:13020",
+      "M00859:387:000000000-DBV4V:1:1101:10588:10743",
+      "M00859:387:000000000-DBV4V:1:1101:10102:9019",
+      "M00859:387:000000000-DBV4V:1:1101:10120:23788",
+      "M00859:387:000000000-DBV4V:1:1101:10176:27163",
+      "M00859:387:000000000-DBV4V:1:1101:10188:20708",
+      "M00859:387:000000000-DBV4V:1:1101:10206:8082",
+      "M00859:387:000000000-DBV4V:1:1101:10238:24207",
+      "M00859:387:000000000-DBV4V:1:1101:10586:26205",
+      "M00859:387:000000000-DBV4V:1:1102:12661:21908",
+      "M00859:387:000000000-DBV4V:1:1102:17022:8273",
+      "M00859:387:000000000-DBV4V:1:1101:19371:28635",
+      "M00859:387:000000000-DBV4V:1:1102:19849:17929",
+      "M00859:387:000000000-DBV4V:1:1101:23788:19308",
+      "M00859:387:000000000-DBV4V:1:1101:10001:6284",
+      "M00859:387:000000000-DBV4V:1:1101:10002:17091",
+      "M00859:387:000000000-DBV4V:1:1101:10002:18912",
+      "M00859:387:000000000-DBV4V:1:1101:10002:21024",
+      "M00859:387:000000000-DBV4V:1:1101:10003:9222",
+      "M00859:387:000000000-DBV4V:1:1101:10004:15255",
+      "M00859:387:000000000-DBV4V:1:1101:10055:20705",
+      "M00859:387:000000000-DBV4V:1:1101:10270:26190",
+      "M00859:387:000000000-DBV4V:1:1101:10322:3906",
+      "M00859:387:000000000-DBV4V:1:1101:10360:10038",
+      "M00859:387:000000000-DBV4V:1:1101:10583:13020",
+      "M00859:387:000000000-DBV4V:1:1101:10588:10743",
+      "M00859:387:000000000-DBV4V:1:1101:10001:6284",
+      "M00859:387:000000000-DBV4V:1:1101:10002:17091",
+      "M00859:387:000000000-DBV4V:1:1101:10002:18912",
+      "M00859:387:000000000-DBV4V:1:1101:10002:21024",
+      "M00859:387:000000000-DBV4V:1:1101:10003:9222",
+      "M00859:387:000000000-DBV4V:1:1101:10004:15255",
+      "M00859:387:000000000-DBV4V:1:1101:10102:9019",
+      "M00859:387:000000000-DBV4V:1:1101:10120:23788",
+      "M00859:387:000000000-DBV4V:1:1101:10176:27163",
+      "M00859:387:000000000-DBV4V:1:1101:10188:20708",
+      "M00859:387:000000000-DBV4V:1:1101:10206:8082",
+      "M00859:387:000000000-DBV4V:1:1101:10238:24207",
+      "M00859:387:000000000-DBV4V:1:1101:10001:6284",
+      "M00859:387:000000000-DBV4V:1:1101:10002:17091",
+      "M00859:387:000000000-DBV4V:1:1101:10002:18912",
+      "M00859:387:000000000-DBV4V:1:1101:10002:21024",
+      "M00859:387:000000000-DBV4V:1:1101:10003:9222",
+      "M00859:387:000000000-DBV4V:1:1101:10004:15255",
+      "M00859:387:000000000-DBV4V:1:1101:10055:20705",
+      "M00859:387:000000000-DBV4V:1:1101:10270:26190",
+      "M00859:387:000000000-DBV4V:1:1101:10322:3906",
+      "M00859:387:000000000-DBV4V:1:1101:10360:10038",
+      "M00859:387:000000000-DBV4V:1:1101:10588:10743",
+      "M00859:387:000000000-DBV4V:1:1101:10748:11389",
+      "M00859:387:000000000-DBV4V:1:1101:10053:24697",
+      "M00859:387:000000000-DBV4V:1:1101:10583:13020",
+      "M00859:387:000000000-DBV4V:1:1101:10908:19104",
+      "M00859:387:000000000-DBV4V:1:1101:11694:28603",
+      "M00859:387:000000000-DBV4V:1:1101:11793:5589",
+      "M00859:387:000000000-DBV4V:1:1101:13217:25330",
+      "M00859:387:000000000-DBV4V:1:1101:10055:20705",
+      "M00859:387:000000000-DBV4V:1:1101:10270:26190",
+      "M00859:387:000000000-DBV4V:1:1101:10322:3906",
+      "M00859:387:000000000-DBV4V:1:1101:10360:10038",
+      "M00859:387:000000000-DBV4V:1:1101:10583:13020",
+      "M00859:387:000000000-DBV4V:1:1101:10588:10743",
+      "M00859:387:000000000-DBV4V:1:1101:10102:9019",
+      "M00859:387:000000000-DBV4V:1:1101:10348:19082",
+      "M00859:387:000000000-DBV4V:1:1101:10403:17565",
+      "M00859:387:000000000-DBV4V:1:1101:10581:18187",
+      "M00859:387:000000000-DBV4V:1:1101:10724:24287",
+      "M00859:387:000000000-DBV4V:1:1101:11127:10346",
+      "M00859:387:000000000-DBV4V:1:1101:10053:24697",
+      "M00859:387:000000000-DBV4V:1:1101:10908:19104",
+      "M00859:387:000000000-DBV4V:1:1101:11694:28603",
+      "M00859:387:000000000-DBV4V:1:1101:11793:5589",
+      "M00859:387:000000000-DBV4V:1:1101:13217:25330",
+      "M00859:387:000000000-DBV4V:1:1101:13257:3354",
+      "M00859:387:000000000-DBV4V:1:1101:10583:13020",
+      "M00859:387:000000000-DBV4V:1:1101:13670:17544",
+      "M00859:387:000000000-DBV4V:1:1101:15161:15020",
+      "M00859:387:000000000-DBV4V:1:1101:22893:6003",
+      "M00859:387:000000000-DBV4V:1:1102:22566:12218",
+      "M00859:387:000000000-DBV4V:1:1102:6019:6276",
+      
+    )
+  ]
+)
+names(unfilt_sub) <- "all"
+
+unfilt_sub$split <- unfilt_sub$all[
+  unfilt_sub$all$qname %in% unfilt_bams[[5]]$split$qname
+]
+
+unfilt_sub$discordant <- unfilt_sub$all[
+  unfilt_sub$all$qname %in% unfilt_bams[[5]]$discordant$qname
+]
+
+unfilt_sub$all <- c(
+  unfilt_sub$all,
+  head(unfilt_bams[[5]]$all, 200)
+)
+
+unfilt_sub <- list(unfilt_sub)
+names(unfilt_sub) <-"409_018_DBV4V_AAGAGGCA-CTCTCTAT_L001"
+saveRDS(unfilt_sub, paste0(Robject_dir, "custom_sub.Rdata"))

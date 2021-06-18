@@ -26,47 +26,50 @@ rmarkdown::render("/share/ScratchGeneral/jamtor/projects/ewing_ctDNA/scripts/cal
 
   filter_multimappers <- TRUE
   filter_max_supp_align <- 1  # make NA to switch off filter
-  filter_supp_only <- TRUE
   filter_singles <- TRUE
+  filter_supp_only <- TRUE
   min_overlap <- 19
   venn_cols <- c("#7C1BE2", "#1B9E77", "#EFC000FF", "blue", "brown")
-  
+
   home_dir <- "/share/ScratchGeneral/jamtor/"
   #home_dir <- "/Users/torpor/clusterHome/"
+  #home_dir <- "/Users/jamestorpy/clusterHome/"
   project_dir <- paste0(home_dir, "projects/ewing_ctDNA/")
   func_dir <- paste0(project_dir, "scripts/functions/")
   Robject_dir <- paste0(project_dir, "Rdata/")
-  
+
   system(paste0("mkdir -p ", Robject_dir))
-  
+
   fusion_dir <- paste0(project_dir, "results/fusions/")
   bam_path <- paste0(project_dir, "results/BWA_and_picard/bams/")
-  
+
   ####################################################################################
   ### 0. Load packages and functions ###
   ####################################################################################
-  
+
   library(Rsamtools)
   library(rtracklayer)
   library(GenomicRanges)
   library(ggvenn)
-  
+  library(parallel)
+
   find_overlapping_reads <- dget(paste0(func_dir, "find_overlapping_reads.R"))
   filter_overlaps <- dget(paste0(func_dir, "filter_overlaps.R"))
   create_venn <- dget(paste0(func_dir, "create_venn.R"))
-  
-  
+  fetch_reads <- dget(paste0(func_dir, "fetch_reads.R"))
+
+
   ####################################################################################
-  ### 1. Load and format data ###
+  ### 1. Load and filter data ###
   ####################################################################################
 
   # load in fusions:
   fusions <- readRDS(paste0(fusion_dir, "EWSR1_GOI_fusions.Rdata"))
   fusions <- fusions$collapsed$high_conf_bp$GOI_fusions$FLI1
-  
+
   # define samplenames:
   samplenames <- names(fusions)
-  
+
   # split into chr22 and chr11 fusion positions:
   chr22_fusions <- lapply(fusions, function(x) {
     return(
@@ -80,17 +83,14 @@ rmarkdown::render("/share/ScratchGeneral/jamtor/projects/ewing_ctDNA/scripts/cal
     )
   })
   chr11_fusions <- fusions
-  
-```
 
-```{r, load_bams, include = FALSE}
   # define file types to import:
   bamtypes <- list(
     all = "consensus.bam", 
     split = "consensus.split.bam", 
     discordant = "consensus.discordant.bam"
   )
-  
+
   # set up scanBamParam to filter out unmapped reads:
   param <- ScanBamParam(
     flag = scanBamFlag(isUnmappedQuery = F),
@@ -100,9 +100,9 @@ rmarkdown::render("/share/ScratchGeneral/jamtor/projects/ewing_ctDNA/scripts/cal
       "seq", "qual"
     )
   )
-  
-  if (!file.exists(paste0(Robject_dir, "VAF_calculation_bams.Rdata"))) {
-  
+
+  if (!file.exists(paste0(Robject_dir, "VAF_calculation_bams_all_chr.Rdata"))) {
+    
     # load in bam, split bam and discordant bam as GRanges:
     unfilt_bams <- lapply(samplenames, function(x) {
       
@@ -130,12 +130,8 @@ rmarkdown::render("/share/ScratchGeneral/jamtor/projects/ewing_ctDNA/scripts/cal
           qual= bam_obj[[1]]$qual
         )
         
-        ######
-        #gr <- gr[1:floor(length(gr)/10)]
-        ######
-        
         return(gr)
-  
+        
       })
       
     })
@@ -179,7 +175,11 @@ rmarkdown::render("/share/ScratchGeneral/jamtor/projects/ewing_ctDNA/scripts/cal
       )
       
     })
-    saveRDS(bams, paste0(Robject_dir, "temp_bams.Rdata"))
+    saveRDS(bams, paste0(Robject_dir, "filtered_bams.Rdata"))
+    
+    ####################################################################################
+    ### 2. Split reads into groups and plot ###
+    ####################################################################################
     
     # fetch discarded reads for venn below:
     for (i in 1:length(unfilt_bams)) {
@@ -270,13 +270,14 @@ rmarkdown::render("/share/ScratchGeneral/jamtor/projects/ewing_ctDNA/scripts/cal
       
     }
     
-    saveRDS(bams, paste0(Robject_dir, "VAF_calculation_bams.Rdata"))
+    saveRDS(unfilt_bams, paste0(Robject_dir, "unfiltered_bams.Rdata"))
+    saveRDS(bams, paste0(Robject_dir, "VAF_calculation_bams_all_chr.Rdata"))
     
   } else {
-    bams <- readRDS(paste0(Robject_dir, "VAF_calculation_bams.Rdata"))
+    unfilt_bams <- readRDS(paste0(Robject_dir, "unfiltered_bams.Rdata"))
+    bams <- readRDS(paste0(Robject_dir, "VAF_calculation_bams_all_chr.Rdata"))
   }
-  
-  
+
   # create venn diagram of filtered vs unfiltered reads:
   for (i in 1:length(bams)) {
     
@@ -298,9 +299,9 @@ rmarkdown::render("/share/ScratchGeneral/jamtor/projects/ewing_ctDNA/scripts/cal
     
   }
   names(filt_vs_unfilt) <- names(bams)
-  
+
   filt_vs_unfilt_venns <- lapply(filt_vs_unfilt, create_venn, venn_cols)
-  
+
   # create venn diagram of paired vs single reads:
   for (i in 1:length(bams)) {
     
@@ -331,9 +332,9 @@ rmarkdown::render("/share/ScratchGeneral/jamtor/projects/ewing_ctDNA/scripts/cal
     
   }
   names(pairs_vs_singles) <- names(bams)
-  
+
   pairs_vs_singles_venns <- lapply(pairs_vs_singles, create_venn, venn_cols)
-  
+
   # create venn diagram of paired reads:
   for (i in 1:length(bams)) {
     
@@ -367,9 +368,9 @@ rmarkdown::render("/share/ScratchGeneral/jamtor/projects/ewing_ctDNA/scripts/cal
     
   }
   names(all_pairs) <- names(bams)
-  
+
   all_pairs_venns <- lapply(all_pairs, create_venn, venn_cols)
-  
+
   # create venn diagram of unpaired reads:
   for (i in 1:length(bams)) {
     
@@ -403,8 +404,177 @@ rmarkdown::render("/share/ScratchGeneral/jamtor/projects/ewing_ctDNA/scripts/cal
     
   }
   names(all_singles) <- names(bams)
-  
+
   all_singles_venns <- lapply(all_singles, create_venn, venn_cols)
+
+
+  for (i in 1:length(bams)) {
+    
+    if (i==1) {
+      split_bam <- list(
+        list(
+          all = bams[[i]]$all, 
+          split_primary = bams[[i]]$split_primary, 
+          split_supp = bams[[i]]$split
+        )
+      )
+    } else {
+      split_bam[[i]] <- list(
+        all = bams[[i]]$all, 
+        split_primary = bams[[i]]$split_primary, 
+        split_supp = bams[[i]]$split
+      )
+    }
+    
+  }
+  names(split_bam) <- names(bams)
+
+  split_venns <- lapply(split_bam, create_venn, venn_cols)
+
+
+  ####################################################################################
+  ### 2. Isolate relevant reads and plot ###
+  ####################################################################################
+
+  if (!file.exists(paste0(Robject_dir, "VAF_calculation_bams.Rdata"))) {
+    
+    # select relevant groups only:
+    fbams <- lapply(bams, function(x) {
+      
+      if (filter_singles) {
+        
+        writeLines("\n")
+        
+        res <- list(
+          split_primary = x$pairs$split_primary,
+          split_supp = x$singles$split,
+          discordant = x$pairs$discordant,
+          non_split_or_discordant = x$pairs$non_discordant_or_split
+        )
+        
+        # remove supplementary split reads not in primary split read pairs:
+        res$split_supp <- res$split_supp[
+          res$split_supp$qname %in% res$split_primary$qname
+        ]
+        
+        print(
+          paste0(
+            "Does the number of supplementary split alignments (", 
+            length(res$split_supp),
+            ") equal half the number of primary split pair alignments (",
+            length(res$split_primary), ")? ",
+            length(res$split_supp) == (length(res$split_primary))/2
+          )
+        )
+        
+        return(res)
+        
+      } else {
+        
+        res <- list(
+          split_primary = c(x$pairs$split_primary, x$singles$split_primary),
+          split_supp = x$singles$split,
+          discordant = c(x$pairs$discordant, x$singles$discordant),
+          non_split_or_discordant = c(
+            x$pairs$non_discordant_or_split, x$singles$non_discordant_or_split
+          )
+        )
+        
+        # remove supplementary split reads not in primary split read pairs:
+        res$split_supp <- res$split_supp[
+          res$split_supp$qname %in% res$split_primary$qname
+        ]
+        
+        return(res)
+        
+      }
+      
+    })
+
+    # initiate cluster:
+    cl <- makeCluster(7)
+    clusterExport(cl, varlist = c("fbams"))
+    
+    # isolate reads mapping to either chr11 or 22:
+    fbams <- parLapply(cl, fbams, function (x) {
+      
+      res <- lapply(x, function(y) {
+        
+        spl <- split(y, y$qname)
+        keep <- lapply(spl, function(z) {
+          if (all(seqnames(z) %in% c("chr11", "chr22"))) {
+            return(z)
+          } else {
+            return(NULL)
+          }
+        })
+        # remove NULLs:
+        keep <- keep[sapply(keep, function(x) !is.null(x))]
+        return(unlist(as(keep, "GRangesList")))
+        
+      })
+      
+      return(res)
+      
+    })
+    stopCluster(cl)
+    
+    saveRDS(fbams, paste0(Robject_dir, "VAF_calculation_bams.Rdata"))
+    
+  } else {
+    fbams <- readRDS(paste0(Robject_dir, "VAF_calculation_bams.Rdata"))
+  }
+
+  # create venn diagrams of chr11/22 read breakdowns:
+  for (i in 1:length(fbams)) {
+    
+    if (i==1) {
+      all_fbam <- list(
+        list(
+          all = unlist(as(fbams[[i]], "GRangesList")), 
+          split_primary = fbams[[i]]$split_primary, 
+          split_supp = fbams[[i]]$split_supp,
+          discordant = fbams[[i]]$discordant, 
+          non_split_or_discordant = fbams[[i]]$non_split_or_discordant
+        )
+      )
+    } else {
+      all_fbam[[i]] <- list(
+        all = unlist(as(fbams[[i]], "GRangesList")), 
+        split_primary = fbams[[i]]$split_primary, 
+        split_supp = fbams[[i]]$split_supp,
+        discordant = fbams[[i]]$discordant, 
+        non_split_or_discordant = fbams[[i]]$non_split_or_discordant
+      )
+    }
+    
+  }
+  names(all_fbam) <- names(fbams)
+
+  fbam_venns <- lapply(all_fbam, create_venn, venn_cols)
+
+  for (i in 1:length(fbams)) {
+    
+    if (i==1) {
+      split_fbam <- list(
+        list(
+          all = unlist(as(fbams[[i]], "GRangesList")), 
+          split_primary = fbams[[i]]$split_primary, 
+          split_supp = fbams[[i]]$split_supp
+        )
+      )
+    } else {
+      split_fbam[[i]] <- list(
+        all = unlist(as(fbams[[i]], "GRangesList")), 
+        split_primary = fbams[[i]]$split_primary, 
+        split_supp = fbams[[i]]$split_supp
+      )
+    }
+    
+  }
+  names(split_fbam) <- names(fbams)
+
+  split_fbam_venns <- lapply(split_fbam, create_venn, venn_cols)
 
   
 ```
@@ -484,6 +654,24 @@ Paired read breakdown:
 Unpaired read breakdown:
 ```{r, echo = FALSE, message = FALSE, warning = FALSE}
   all_singles_venns[["409_018_DBV4V_AAGAGGCA-CTCTCTAT_L001"]]
+```
+
+<br />
+
+Split read breakdown:
+```{r, echo = FALSE, message = FALSE, warning = FALSE}
+  split_venns[["409_018_DBV4V_AAGAGGCA-CTCTCTAT_L001"]]
+```
+
+<br />
+
+Only reads mapping to either chr11 or 22 were kept:
+```{r, echo = FALSE, message = FALSE, warning = FALSE}
+  fbam_venns[["409_018_DBV4V_AAGAGGCA-CTCTCTAT_L001"]]
+```
+
+```{r, echo = FALSE, message = FALSE, warning = FALSE}
+  split_fbam_venns[["409_018_DBV4V_AAGAGGCA-CTCTCTAT_L001"]]
 ```
 
 <br />

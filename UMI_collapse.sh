@@ -166,9 +166,9 @@ samtools view -h -F 1294 $int_dir/$sample_name.markdups.bam | \
 samtools index $int_dir/$sample_name.markdups.discordant.bam
 
 # filter split reads:
-samtools view -h -f 2048 $int_dir/$sample_name.markdups.bam | \
-  samtools view -bh > $int_dir/$sample_name.markdups.split.bam
-  samtools index $int_dir/$sample_name.markdups.split.bam
+samtools view -hf 2048 $int_dir/$sample_name.markdups.bam | \
+  samtools view -bh > $int_dir/$sample_name.markdups.split.supp.bam
+  samtools index $int_dir/$sample_name.markdups.split.supp.bam
 
 
 ##################################################################################################################################
@@ -192,6 +192,11 @@ printf "\n"
 
 # index bam:
 samtools index $bam_dir/$sample_name.consensus.bam
+
+# filter and index concordant pairs:
+samtools view -hf 0x2 $bam_dir/$sample_name.consensus.bam | \
+  samtools view -bh > $bam_dir/$sample_name.markdups.concordant.pairs.bam
+samtools index $bam_dir/$sample_name.markdups.concordant.pairs.bam
 
 # filter and index discordant reads:
 samtools view -h -F 1294 $bam_dir/$sample_name.consensus.bam | \
