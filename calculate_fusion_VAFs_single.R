@@ -8,13 +8,15 @@ home_dir <- "/Users/torpor/clusterHome/"
 #home_dir <- "/share/ScratchGeneral/jamtor/"
 project_dir <- paste0(home_dir, "projects/ewing_ctDNA/")
 func_dir <- paste0(project_dir, "scripts/functions/")
-Robject_dir <- paste0(project_dir, "Rdata/", samplename, "/")
-col_dir <- paste0(home_dir, "R/colour_palettes/")
-
+result_dir <- paste0(project_dir, "results/")
+Robject_dir <- paste0(result_dir, "VAF_calculation/", samplename, "/Rdata/")
+table_dir <- paste0(result_dir, "VAF_calculation/", samplename, "/tables/")
 system(paste0("mkdir -p ", Robject_dir))
+system(paste0("mkdir -p ", table_dir))
 
-fusion_dir <- paste0(project_dir, "results/fusions/")
-bam_path <- paste0(project_dir, "results/BWA_and_picard/bams/")
+fusion_dir <- paste0(result_dir, "fusions/")
+bam_path <- paste0(result_dir, "BWA_and_picard/bams/")
+col_dir <- paste0(home_dir, "R/colour_palettes/")
 
 
 ####################################################################################
@@ -26,6 +28,8 @@ library(rtracklayer)
 library(GenomicRanges)
 library(reshape)
 library(ggplot2)
+library(cowplot)
+library(ggvenn)
 
 create_venn <- dget(paste0(func_dir, "create_venn.R"))
 fetch_reads <- dget(paste0(func_dir, "fetch_reads.R"))
@@ -145,14 +149,62 @@ if (!file.exists(paste0(Robject_dir, "VAF_calculation_reads.Rdata"))) {
   read_numbers["split_pairs",] = NA
   read_numbers["non_split_concordant_pairs",] = NA
 
-  # filter all bams:
-  # initiate cluster:
-  cl <- makeCluster(3)
-  clusterExport(
-    cl, varlist = c("unfilt_bam")
+  # remove pairs not mapped to either chr11 or 22:
+  chr_filt_bam <- list(
+    concordant_pairs = unfilt_bam$concordant_pairs,
+    discordant_pairs = unfilt_bam$discordant_pairs,
+    split_supp = unfilt_bam$split_supp
   )
-
-  temp_bam <- parLapply(cl, unfilt_bam, function(x) {
+  spl <- lapply(chr_filt_bam, function(x) split(x, x$qname))
+  
+  # initiate cluster:
+  cl <- makeCluster(7)
+  clusterExport(
+    cl, varlist = c("spl")
+  )
+  
+  # remove concordant pairs not mapped to either chr11 or 22:
+  spl$concordant_pairs <- spl$concordant_pairs[
+    unlist(
+      parLapply(cl, spl$concordant_pairs, function(x) {
+        all(seqnames(x) %in% c("chr11", "chr22"))
+      })
+    )
+  ]
+  
+  # remove discordant pairs not mapped to chr11 and 22:
+  spl$discordant_pairs <- spl$discordant_pairs[
+    unlist(
+      parLapply(cl, spl$discordant_pairs, function(x) {
+        "chr11" %in% seqnames(x) & "chr22" %in% seqnames(x)
+      })
+    )
+  ]
+  
+  stopCluster(cl)
+  
+  # remove one mate of double-split read pairs:
+  spl$split_supp <- lapply(spl$split_supp, function(x) {
+    return(x[1])
+  })
+  
+  # merge each set of reads and separate split supp and primary:
+  chr_filt_bam <- lapply(spl, function(x) {
+    x <- unlist(
+      as(x, "GRangesList")
+    )
+    names(x) <- NULL
+    return(x)
+  })
+  
+  # update read number record:
+  read_numbers$non_fusion_chr_removed <- c(
+    sapply(chr_filt_bam, length),
+    split_pairs = NA,
+    non_split_concordant_pairs = NA
+  )
+  
+  temp_bam <- lapply(chr_filt_bam, function(x) {
 
   	# remove multimapping reads (mapq score = 0):
     mmappers <- unique(x$qname[x$mapq == 0])
@@ -169,8 +221,6 @@ if (!file.exists(paste0(Robject_dir, "VAF_calculation_reads.Rdata"))) {
     )
 
   })
-
-  stopCluster(cl)
   
   # update read number record:
   read_numbers$mmappers_removed <- c(
@@ -185,13 +235,7 @@ if (!file.exists(paste0(Robject_dir, "VAF_calculation_reads.Rdata"))) {
 
   # filter concordant and discordant pairs:
   paired_bam <- temp_bam[names(temp_bam) %in% c("concordant_pairs", "discordant_pairs")]
-
-  # initiate cluster:
-  cl <- makeCluster(3)
-  clusterExport(
-    cl, varlist = c("paired_bam", "func_dir")
-  )
-
+  
   filt_bam <- lapply(paired_bam, function(x) {
     
     # remove reads with >1 supplementary alignment:
@@ -237,8 +281,6 @@ if (!file.exists(paste0(Robject_dir, "VAF_calculation_reads.Rdata"))) {
 
   })
   
-  stopCluster(cl)
-  
   # add read numbers to record:
   temp_read_no <- rbind(
     as.data.frame(
@@ -276,13 +318,13 @@ if (!file.exists(paste0(Robject_dir, "VAF_calculation_reads.Rdata"))) {
   	discordant_pairs = filt_bam$discordant_pairs$bam,
   	split_supp = temp_bam$split_supp
   )
-
+  
   # remove split supps not in either concordant or discordant pair elements:
   bam$split_supp <- bam$split_supp[
     bam$split_supp$qname %in% c(
       bam$concordant_pairs$qname,
       bam$discordant_pairs$qname
-  	)
+    )
   ]
   
   # fetch split primary pairs:
@@ -313,101 +355,23 @@ if (!file.exists(paste0(Robject_dir, "VAF_calculation_reads.Rdata"))) {
     !(bam$concordant_pairs$qname %in% bam$split_pairs$qname)
   ]
   
-  # record read numbers:
-  read_numbers$split_removed_from_discordant <- sapply(bam, length)
-  
-  # remove pairs not mapped to either chr11 or 22:
-  chr_filt_bam <- c(
-    list(
-      concordant_pairs = bam$concordant_pairs,
-      discordant_pairs = bam$discordant_pairs,
-      non_split_concordant_pairs = bam$non_split_concordant_pairs
-    ),
-    list(
-      all_split = c(
-        bam$split_pairs,
-        bam$split_supp
-      )
-    )
-  )
-  spl <- lapply(chr_filt_bam, function(x) split(x, x$qname))
-  
-  # initiate cluster:
-  cl <- makeCluster(7)
-  clusterExport(
-    cl, varlist = c("spl")
-  )
-  
-  # remove concordant pairs not mapped to either chr11 or 22:
-  spl$concordant_pairs <- spl$concordant_pairs[
-    unlist(
-      parLapply(cl, spl$concordant_pairs, function(x) {
-        all(seqnames(x) %in% c("chr11", "chr22"))
-      })
-    )
-  ]
-
-  # remove non split concordant pairs not mapped to chr11 and 22:
-  spl$non_split_concordant_pairs <- spl$non_split_concordant_pairs[
-    unlist(
-      parLapply(cl, spl$non_split_concordant_pairs, function(x) {
-        all(seqnames(x) %in% c("chr11", "chr22"))
-      })
-    )
-  ]
-  
-  # remove discordant pairs not mapped to chr11 and 22:
-  spl$discordant_pairs <- spl$discordant_pairs[
-    unlist(
-      parLapply(cl, spl$discordant_pairs, function(x) {
-        "chr11" %in% seqnames(x) & "chr22" %in% seqnames(x)
-      })
-    )
-  ]
-  
-  # remove split reads not mapped to chr11 and 22:
-  spl$all_split <- spl$all_split[
-    unlist(
-      parLapply(cl, spl$all_split, function(x) {
-        "chr11" %in% seqnames(x) & "chr22" %in% seqnames(x)
-      })
-    )
-  ]
-  
-  stopCluster(cl)
-  
-  # merge each set of reads and separate split supp and primary:
-  fusion_chr_bam <- lapply(spl, function(x) unlist(x))
-  fusion_chr_bam$split_supp <- bam$split_supp[
-    bam$split_supp$qname %in% fusion_chr_bam$all_split$qname
-  ]
-  fusion_chr_bam$split_pairs <- bam$split_pairs[
-    bam$split_pairs$qname %in% fusion_chr_bam$all_split$qname
-  ]
-  fusion_chr_bam <- fusion_chr_bam[
-    !(names(fusion_chr_bam) %in% "all_split")
-  ]
-  
   # remove rownames:
-  fusion_chr_bam <- lapply(fusion_chr_bam, function(x) {
+  final_bam <- lapply(bam, function(x) {
     names(x) <- NULL
     return(x)
   })
-
+  
   # record read numbers:
-  temp_no <- sapply(fusion_chr_bam, length)
-  read_numbers$fusion_chr_only <- temp_no[
-    match(rownames(read_numbers), names(temp_no))
-  ]
+  read_numbers$split_removed_from_discordant <- sapply(final_bam, length)
 
   saveRDS(unfilt_bam, paste0(Robject_dir, "unfiltered_VAF_calculation_reads.Rdata"))
-  saveRDS(fusion_chr_bam, paste0(Robject_dir, "VAF_calculation_reads.Rdata"))
+  saveRDS(final_bam, paste0(Robject_dir, "VAF_calculation_reads.Rdata"))
   saveRDS(read_numbers, paste0(Robject_dir, "VAF_calculation_read_nos.Rdata"))
   
 } else {
 
   unfilt_bam <- readRDS(paste0(Robject_dir, "unfiltered_VAF_calculation_reads.Rdata"))
-  fusion_chr_bam <- readRDS(paste0(Robject_dir, "VAF_calculation_reads.Rdata"))
+  final_bam <- readRDS(paste0(Robject_dir, "VAF_calculation_reads.Rdata"))
   read_numbers <- readRDS(paste0(Robject_dir, "VAF_calculation_read_nos.Rdata"))
 
 }
@@ -415,29 +379,29 @@ if (!file.exists(paste0(Robject_dir, "VAF_calculation_reads.Rdata"))) {
 # create venn diagram of filtered vs unfiltered reads:
 filt_vs_unfilt <- list(
   unfiltered = c(unfilt_bam$concordant_pairs, unfilt_bam$discordant_pairs), 
-  filtered = c(fusion_chr_bam$concordant_pairs, fusion_chr_bam$discordant_pairs)
+  filtered = c(final_bam$concordant_pairs, final_bam$discordant_pairs)
 )
 filt_vs_unfilt_venn <- create_venn(filt_vs_unfilt, venn_cols)
 
 # create venn diagram of split concordant pairs:
-concordant_split <- fusion_chr_bam[
-  names(fusion_chr_bam) %in% c(
+concordant_split <- final_bam[
+  names(final_bam) %in% c(
     "concordant_pairs", "split_pairs", "split_supp"
   )
 ]
 concordant_split_venn <- create_venn(concordant_split, venn_cols)
 
 # create venn diagram of non-split concordant pairs:
-concordant_non_split <- fusion_chr_bam[
-  names(fusion_chr_bam) %in% c(
+concordant_non_split <- final_bam[
+  names(final_bam) %in% c(
     "concordant_pairs", "non_split_concordant_pairs"
   )
 ]
 concordant_non_split_venn <- create_venn(concordant_non_split, venn_cols)
 
 # create venn diagram of discordant pairs:
-discordant <- fusion_chr_bam[
-  names(fusion_chr_bam) %in% c(
+discordant <- final_bam[
+  names(final_bam) %in% c(
     "discordant_pairs", "split_pairs", "split_supp"
   )
 ]
@@ -472,105 +436,75 @@ p <- p + theme(
 ### 2. find breakpoint-overlapping reads: ###
 ####################################################################################
 
-# create empty list to be filled:
-fusion_reads <- list(
-  spanning = NULL,
-  overlapping = NULL
-)
-
-# find overlaps of non-split concordant pairs with chr22 breakpoint coords, 
-# add to non_supporting_reads$overlapping:
-non_supporting_reads <- fusion_reads
-
-# split concordant reads by qname:
-spl <- split(
-  fusion_chr_bam$non_split_concordant_pairs, 
-  fusion_chr_bam$non_split_concordant_pairs$qname
-)
-
-# initiate cluster:
-cl <- makeCluster(7)
-clusterExport(
-  cl, varlist = c("spl")
-)
-
-# find overlaps with fusion breakpoint:
-overlapping_non_supporting_reads <- parLapply(
-  cl,
-  spl,
-  find_overlapping_reads,
-  fusions = chr22_fusions,
-  chromosome = "chr22"
-)
-
-stopCluster(cl)
-
-non_supporting_reads$overlapping <- unlist(
-  as(
-    overlapping_non_supporting_reads[
-      sapply(overlapping_non_supporting_reads, function(x) !is.null(x))
-    ],
-    "GRangesList"
+if (!file.exists(paste0(Robject_dir, "all_fusion_reads.Rdata"))) {
+  
+  # create empty list to be filled:
+  fusion_reads <- list(
+    spanning = NULL,
+    overlapping = NULL
   )
-)
-names(non_supporting_reads$overlapping) <- NULL
-
-# find overlaps of split primary reads with chr22 breakpoint coords, 
-# add to supporting_reads$overlapping:
-supporting_reads <- fusion_reads
-
-spl <- split(fusion_chr_bam$split_pairs, fusion_chr_bam$split_pairs$qname)
-
-# initiate cluster:
-cl <- makeCluster(7)
-clusterExport(
-  cl, varlist = c("spl")
-)
-
-# find overlaps with fusion breakpoint:
-overlapping_supporting_reads <- parLapply(
-  cl,
-  spl,
-  find_overlapping_reads,
-  fusions = chr22_fusions,
-  chromosome = "chr22"
-)
-
-stopCluster(cl)
-
-supporting_reads$overlapping <- unlist(
-  as(
-    overlapping_supporting_reads[
-      sapply(overlapping_supporting_reads, function(x) !is.null(x))
-    ],
-    "GRangesList"
+  
+  # find overlaps of non-split concordant pairs with chr22 breakpoint coords, 
+  # add to non_supporting_reads$overlapping:
+  non_supporting_reads <- fusion_reads
+  
+  # split concordant reads by qname:
+  spl <- split(
+    final_bam$non_split_concordant_pairs, 
+    final_bam$non_split_concordant_pairs$qname
   )
-)
-names(supporting_reads$overlapping) <- NULL
-
-# find overlaps of split primary reads with chr11 breakpoint coords, 
-# add to supporting_reads$overlapping:
-
-# initiate cluster:
-cl <- makeCluster(7)
-clusterExport(
-  cl, varlist = c("spl")
-)
-
-# find overlaps with fusion breakpoint:
-overlapping_supporting_reads <- parLapply(
-  cl,
-  spl,
-  find_overlapping_reads,
-  fusions = chr11_fusions,
-  chromosome = "chr11"
-)
-
-stopCluster(cl)
-
-supporting_reads$overlapping <- c(
-  supporting_reads$overlapping,
-  unlist(
+  
+  # initiate cluster:
+  cl <- makeCluster(7)
+  clusterExport(
+    cl, varlist = c("spl")
+  )
+  
+  # find overlaps with fusion breakpoint:
+  overlapping_non_supporting_reads <- parLapply(
+    cl,
+    spl,
+    find_overlapping_reads,
+    fusions = chr22_fusions,
+    chromosome = "chr22"
+  )
+  
+  stopCluster(cl)
+  
+  non_supporting_reads$overlapping <- unlist(
+    as(
+      overlapping_non_supporting_reads[
+        sapply(overlapping_non_supporting_reads, function(x) !is.null(x))
+      ],
+      "GRangesList"
+    )
+  )
+  names(non_supporting_reads$overlapping) <- NULL
+  
+  # find overlaps of split primary reads with chr22 breakpoint coords, 
+  # add to supporting_reads$overlapping:
+  supporting_reads <- fusion_reads
+  
+  spl <- split(final_bam$split_pairs, final_bam$split_pairs$qname)
+  
+  # initiate cluster:
+  cl <- makeCluster(7)
+  clusterExport(
+    cl, varlist = c("spl")
+  )
+  
+  # find overlaps with fusion breakpoint:
+  overlapping_supporting_reads <- parLapply(
+    cl,
+    spl,
+    find_overlapping_reads,
+    fusions = chr22_fusions,
+    chromosome = "chr22"
+  )
+  
+  stopCluster(cl)
+  
+  supporting_reads$overlapping <- unlist(
     as(
       overlapping_supporting_reads[
         sapply(overlapping_supporting_reads, function(x) !is.null(x))
@@ -578,250 +512,309 @@ supporting_reads$overlapping <- c(
       "GRangesList"
     )
   )
-)
-names(supporting_reads$overlapping) <- NULL
-
-# deduplicate supporting reads:
-spl <- split(supporting_reads$overlapping, supporting_reads$overlapping$qname)
-overlapping_supporting_reads <- lapply(spl, function(x) {
-  return(x[!duplicated(x)])
-})
-
-supporting_reads$overlapping <- unlist(
-  as(
-    overlapping_supporting_reads[sapply(overlapping_supporting_reads, function(x) !is.null(x))],
-    "GRangesList"
+  names(supporting_reads$overlapping) <- NULL
+  
+  # find overlaps of split primary reads with chr11 breakpoint coords, 
+  # add to supporting_reads$overlapping:
+  
+  # initiate cluster:
+  cl <- makeCluster(7)
+  clusterExport(
+    cl, varlist = c("spl")
   )
-)
-names(supporting_reads$overlapping) <- NULL
-
-# deduplicate non_supporting reads:
-spl <- split(non_supporting_reads$overlapping, non_supporting_reads$overlapping$qname)
-overlapping_non_supporting_reads <- lapply(spl, function(x) {
-  return(x[!duplicated(x)])
-})
-
-non_supporting_reads$overlapping <- unlist(
-  as(
-    overlapping_non_supporting_reads[sapply(overlapping_non_supporting_reads, function(x) !is.null(x))],
-    "GRangesList"
+  
+  # find overlaps with fusion breakpoint:
+  overlapping_supporting_reads <- parLapply(
+    cl,
+    spl,
+    find_overlapping_reads,
+    fusions = chr11_fusions,
+    chromosome = "chr11"
   )
-)
-names(non_supporting_reads$overlapping) <- NULL
-
-# filter overlapping reads without at least min_overlap on both sides of fusion:
-non_supporting_reads$overlapping <- filter_overlaps(
-  reads = non_supporting_reads$overlapping, 
-  min_overlap = min_overlap
-)
-
-supporting_reads$overlapping <- filter_overlaps(
-  reads = supporting_reads$overlapping, 
-  min_overlap = min_overlap
-)
-
-
-####################################################################################
-### 3. Find breakpoint-spanning reads ###
-####################################################################################
-
-# find breakpoint-spanning reads from non-split non-discordant reads, 
-# add to spanning$non_supporting:
-
-# fetch read gaps (read + gap coords):
-# split by qname:
-spl <- split(
-  fusion_chr_bam$non_split_concordant_pairs, 
-  fusion_chr_bam$non_split_concordant_pairs$qname
-)
-
-# initiate cluster:
-cl <- makeCluster(7)
-clusterExport(
-  cl, varlist = c("spl")
-)
-
-# fetch read gaps:
-non_split_concordant_gaps <- parLapply(
-  cl, spl, fetch_mate_gap
-)
-
-stopCluster(cl)
-
-# merge into granges:
-non_split_concordant_gaps <- unlist(
-  as(non_split_concordant_gaps, "GRangesList")
-)
-names(non_split_concordant_gaps) <- NULL
-
-# find overlaps of gaps with fusions:
-spanning_non_supporting_gaps <- find_overlapping_reads(
-  fusions = chr22_fusions, 
-  reads = non_split_concordant_gaps,
-  chromosome = "chr22"
-)
-
-# fetch corresponding read pairs:
-non_supporting_reads$spanning <- fusion_chr_bam$non_split_concordant_pairs[
-  fusion_chr_bam$non_split_concordant_pairs$qname %in% 
-    spanning_non_supporting_gaps$qname
-]
-m <- match(
-  non_supporting_reads$spanning$qname, spanning_non_supporting_gaps$qname
-)
-non_supporting_reads$spanning$chr22_fusion_coord <- 
-  spanning_non_supporting_gaps$chr22_fusion_coord[m]
-
-# find breakpoint-spanning reads from discordant reads, 
-# add to spanning$supporting:
-spl <- split(
-  fusion_chr_bam$discordant_pairs, 
-  fusion_chr_bam$discordant_pairs$qname
-)
-spanning_supporting_reads <- lapply(
-  spl, find_spanning_discordant, 
-  chr11_fusions, chr22_fusions, disc_read_window
-)
-
-# merge to granges object:
-supporting_reads$spanning <- unlist(
-  as(
-    spanning_supporting_reads[
-      sapply(spanning_supporting_reads, function(x) !is.null(x))
-    ], "GRangesList"
-  )
-)
-names(supporting_reads$spanning) <- NULL
-
-
-####################################################################################
-### 4. Calculate proportions of non-supporting vs supporting read pairs for each
-# sample ###
-####################################################################################
-
-# check all reads are in pairs:
-supporting_check <- sapply(supporting_reads, function(x) {
-  spl <- split(x, x$qname)
-  return(
-    all(
-      sapply(spl, function(y) {
-        length(y) == 2
-      })
+  
+  stopCluster(cl)
+  
+  supporting_reads$overlapping <- c(
+    supporting_reads$overlapping,
+    unlist(
+      as(
+        overlapping_supporting_reads[
+          sapply(overlapping_supporting_reads, function(x) !is.null(x))
+        ],
+        "GRangesList"
+      )
     )
   )
-})
-print(paste0("Are all supporting reads in pairs? ", all(supporting_check)))
-
-non_supporting_check <- sapply(non_supporting_reads, function(x) {
-  spl <- split(x, x$qname)
-  return(
-    all(
-      sapply(spl, function(y) {
-        length(y) == 2
-      })
-    )
-  )
-})
-print(
-  paste0("Are all non-supporting reads in pairs? ", all(non_supporting_check))
-)
-
-# remove non-primary read mate from each pair in order to split by fusion. 
-# pairs with one mate supporting one breakpoint, one supporting another
-# will be counted towards the two breakpooints when split:
-remove_pairs <- function(reads) {
+  names(supporting_reads$overlapping) <- NULL
   
-  # split reads by name:
-  spl <- split(reads, reads$qname)
-  
-  res <- lapply(spl, function(x) {
-    
-    # remove read with no overlapping fusion coord:
-    filt_read <- x[!is.na(x$fusion_coord)]
-    
-    # if there are still 2 reads, remove the one mapped to chromosome 11:
-    if (length(filt_read) > 1) {
-      filt_read <- filt_read[filt_read$fusion_chr == "chr11"]
-    }
-    
-    # if there are still 2 reads and they have the same fusion coordinate, remove 
-    # the first one:
-    if (length(filt_read) > 1) {
-      filt_read <- filt_read[1]
-    }
-    
-    return(filt_read)
-    
+  # deduplicate supporting reads:
+  spl <- split(supporting_reads$overlapping, supporting_reads$overlapping$qname)
+  overlapping_supporting_reads <- lapply(spl, function(x) {
+    return(x[!duplicated(x)])
   })
   
-  res <- unlist(
+  supporting_reads$overlapping <- unlist(
     as(
-      res, "GRangesList"
+      overlapping_supporting_reads[sapply(overlapping_supporting_reads, function(x) !is.null(x))],
+      "GRangesList"
     )
   )
-  names(res) <- NULL
+  names(supporting_reads$overlapping) <- NULL
   
-  return(res)
+  # deduplicate non_supporting reads:
+  spl <- split(non_supporting_reads$overlapping, non_supporting_reads$overlapping$qname)
+  overlapping_non_supporting_reads <- lapply(spl, function(x) {
+    return(x[!duplicated(x)])
+  })
   
-}
-
-fusion_supporting_reads <- lapply(supporting_reads, remove_pairs)
-
-
-
-# check numbers for following - don't make sense:
-fusion_non_supporting_reads <- lapply(non_supporting_reads, remove_pairs)
-
-
-# remove non-split reads from split read pairs:
-fusion_supporting_reads$overlapping <- supporting_reads$overlapping[
-  !is.na(supporting_reads$overlapping$fusion_coord)
-]
-
-# remove non-split reads from non-split overlapping read pairs:
-fusion_non_supporting_reads$overlapping <- non_supporting_reads$overlapping[
-  !is.na(non_supporting_reads$overlapping$fusion_coord)
-]
-
-# remove chr11 reads from discordant read pairs:
-fusion_supporting_reads$spanning <- supporting_reads$spanning[
-  supporting_reads$spanning$fusion_chr != "chr22"
-]
-
-# remove chr11 reads from concordant spanning read pairs:
-fusion_supporting_reads$spanning <- supporting_reads$spanning[
-  supporting_reads$spanning$fusion_chr != "chr22"
-]
-
-
-######
-all_supporting <- unlist(as(fusion_supporting_reads, "GRangesList"))
-######
-
-# split non_supporting read mates into fusions:
-fusion_non_supporting_reads <- lapply(
-  non_supporting_reads, function(x) split(x, x$fusion_coord)
-)
-
-  
-  res <- unlist(
+  non_supporting_reads$overlapping <- unlist(
     as(
-      combined[
-        sapply(combined, function(x) !is.null(x))
+      overlapping_non_supporting_reads[sapply(overlapping_non_supporting_reads, function(x) !is.null(x))],
+      "GRangesList"
+    )
+  )
+  names(non_supporting_reads$overlapping) <- NULL
+  
+  # filter overlapping reads without at least min_overlap on both sides of fusion:
+  non_supporting_reads$overlapping <- filter_overlaps(
+    reads = non_supporting_reads$overlapping, 
+    min_overlap = min_overlap
+  )
+  
+  supporting_reads$overlapping <- filter_overlaps(
+    reads = supporting_reads$overlapping, 
+    min_overlap = min_overlap
+  )
+  
+  
+  ####################################################################################
+  ### 3. Find breakpoint-spanning reads ###
+  ####################################################################################
+  
+  # find breakpoint-spanning reads from non-split non-discordant reads, 
+  # add to spanning$non_supporting:
+  
+  # fetch read gaps (read + gap coords):
+  # split by qname:
+  spl <- split(
+    final_bam$non_split_concordant_pairs, 
+    final_bam$non_split_concordant_pairs$qname
+  )
+  
+  # initiate cluster:
+  cl <- makeCluster(7)
+  clusterExport(
+    cl, varlist = c("spl")
+  )
+  
+  # fetch read gaps:
+  non_split_concordant_gaps <- parLapply(
+    cl, spl, fetch_mate_gap
+  )
+  
+  stopCluster(cl)
+  
+  # merge into granges:
+  non_split_concordant_gaps <- unlist(
+    as(non_split_concordant_gaps, "GRangesList")
+  )
+  names(non_split_concordant_gaps) <- NULL
+  
+  # split by qname:
+  spl <- split(non_split_concordant_gaps, non_split_concordant_gaps$qname)
+  
+  # initiate cluster:
+  cl <- makeCluster(7)
+  clusterExport(
+    cl, varlist = c("spl")
+  )
+  
+  # find overlaps of gaps with fusions:
+  spanning_non_supporting_gaps <- parLapply(
+    cl, 
+    spl, 
+    find_overlapping_reads, 
+    fusions = chr22_fusions,
+    chromosome = "chr22"
+  )
+  
+  stopCluster(cl)
+  
+  # merge reads to granges object, removing NAs:
+  if (length(spanning_non_supporting_gaps) > 0) {
+    spanning_non_supporting_gaps <- unlist(
+      as(
+        spanning_non_supporting_gaps[
+          sapply(spanning_non_supporting_gaps, function(x) !is.null(x))
+        ],
+        "GRangesList"
+      )
+    )
+    names(spanning_non_supporting_gaps) <- NULL
+  }
+  
+  # fetch corresponding read pairs:
+  non_supporting_reads$spanning <- final_bam$non_split_concordant_pairs[
+    final_bam$non_split_concordant_pairs$qname %in% 
+      spanning_non_supporting_gaps$qname
+  ]
+  m <- match(
+    non_supporting_reads$spanning$qname, spanning_non_supporting_gaps$qname
+  )
+  non_supporting_reads$spanning$chr22_fusion_coord <- 
+    spanning_non_supporting_gaps$chr22_fusion_coord[m]
+  
+  # find breakpoint-spanning reads from discordant reads, 
+  # add to spanning$supporting:
+  spl <- split(
+    final_bam$discordant_pairs, 
+    final_bam$discordant_pairs$qname
+  )
+  spanning_supporting_reads <- lapply(
+    spl, find_spanning_discordant, 
+    chr11_fusions, chr22_fusions, disc_read_window
+  )
+  
+  # merge to granges object:
+  supporting_reads$spanning <- unlist(
+    as(
+      spanning_supporting_reads[
+        sapply(spanning_supporting_reads, function(x) !is.null(x))
       ], "GRangesList"
     )
   )
-  names(res) <- NULL
+  names(supporting_reads$spanning) <- NULL
   
-  return(res)
   
-})
+  ####################################################################################
+  ### 4. Calculate proportions of non-supporting vs supporting read pairs for each
+  # sample ###
+  ####################################################################################
+  
+  # check all reads are in pairs:
+  supporting_check <- sapply(supporting_reads, function(x) {
+    spl <- split(x, x$qname)
+    return(
+      all(
+        sapply(spl, function(y) {
+          length(y) == 2
+        })
+      )
+    )
+  })
+  print(paste0("Are all supporting reads in pairs? ", all(supporting_check)))
+  
+  non_supporting_check <- sapply(non_supporting_reads, function(x) {
+    spl <- split(x, x$qname)
+    return(
+      all(
+        sapply(spl, function(y) {
+          length(y) == 2
+        })
+      )
+    )
+  })
+  print(
+    paste0("Are all non-supporting reads in pairs? ", all(non_supporting_check))
+  )
+  
+  # remove non-primary read mate from each pair in order to split by fusion. 
+  # pairs with one mate supporting one breakpoint, one supporting another
+  # will be counted towards the two breakpooints when split:
+  remove_pairs <- function(reads) {
+    
+    # split reads by name:
+    spl <- split(reads, reads$qname)
+    
+    res <- lapply(spl, function(x) {
+      
+      # remove read with no overlapping fusion coord:
+      filt_read <- x[!is.na(x$fusion_coord)]
+      
+      # if there are still 2 reads, remove the one mapped to chromosome 11:
+      if (length(filt_read) > 1) {
+        filt_read <- filt_read[!(filt_read$fusion_chr == "chr11")]
+      }
+      
+      # if there are still 2 reads and they have the same fusion coordinate, remove 
+      # the first one:
+      if (length(filt_read) > 1) {
+        if (filt_read$fusion_coord[1] == filt_read$fusion_coord[2]) {
+          filt_read <- filt_read[1]
+        }
+      }
+      
+      return(filt_read)
+      
+    })
+    
+    res <- unlist(
+      as(
+        res, "GRangesList"
+      )
+    )
+    names(res) <- NULL
+    
+    return(res)
+    
+  }
+  
+  # remove 1 mate of each pair:
+  fusion_supporting_reads <- lapply(supporting_reads, remove_pairs)
+  fusion_non_supporting_reads <- lapply(non_supporting_reads, remove_pairs)
+  
+  # split read mates into fusions:
+  all_supporting <- unlist(as(fusion_supporting_reads, "GRangesList"))
+  all_non_supporting <- unlist(as(fusion_non_supporting_reads, "GRangesList"))
+  all_reads <- list(
+    supporting = split(all_supporting, all_supporting$fusion_coord),
+    non_supporting = split(all_non_supporting, all_non_supporting$fusion_coord)
+  )
+  
+  saveRDS(all_reads, paste0(Robject_dir, "all_fusion_reads.Rdata"))
+  
+} else {
+  
+  all_reads <- readRDS(paste0(Robject_dir, "all_fusion_reads.Rdata"))
+  
+}
 
 # keep breakpoint with greatest number of supporting reads:
-lapply(supporting_reads, function(x) split(x, x$chr22_fusion_coord))
+final_reads <- lapply(all_reads, function(x) {
+  return(unlist(x[which.max(sapply(x, length))]))
+})
 
-# add overlapping and spanning reads for supporting and non-supporting filtered
-# reads:
+# create venn of final reads:
+final_reads$all <- unlist(
+  as(
+    final_reads, "GRangesList"
+  )
+)
+names(final_reads$all ) <- NULL
+final_venn <- create_venn(final_reads, venn_cols)
 
 # calculate supporting vs non-supporting proportion:
+VAF <- round(
+  length(final_reads$supporting)/length(final_reads$non_supporting)*100,
+  1
+)
 
+# save VAF:
+write.table(
+  VAF,
+  paste0(table_dir, "VAF.txt"),
+  quote = F,
+  row.names = F,
+  col.names = F
+)
+
+
+######
+# check concordant reads for any breakpoint spanning:
+######
+
+chr22_right_of_bp <- unfilt_bam$concordant_pairs
+chr22_left_of_bp <- unfilt_bam$concordant_pairs
+
+any(chr22_right_of_bp$qname %in% chr22_left_of_bp$qname)
+any(chr22_left_of_bp$qname %in% chr22_right_of_bp$qname)

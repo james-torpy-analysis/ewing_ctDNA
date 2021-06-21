@@ -24,12 +24,14 @@ fetch_mate_gap <- function(split_read_pair) {
       print(
         paste0(split_read_pair$qname, " has more than one corresponding mate, removing...")
       )
+      return(NA)
     }
     
   } else {
     print(
       paste0(split_read_pair$qname, " has mates in different chromosomes, removing...")
     )
+    return(NA)
   }
   
 }
