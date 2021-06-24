@@ -3,7 +3,7 @@
 source ~/.bashrc
 
 sample_name=$1
-#sample_name="409_002_D9YW9_GGACTCCT-CTCTCTAT_L001"
+sample_name="409_001_D9YW9_TCCTGAGC-CTCTCTAT_L001"
 
 printf "\n\n"
 echo "sample name is $sample_name"
@@ -13,6 +13,7 @@ home_dir="/share/ScratchGeneral/jamtor"
 project_dir="$home_dir/projects/ewing_ctDNA"
 fq_dir="$project_dir/raw_files/$sample_name"
 result_dir="$project_dir/results"
+collapse_dir="$project_dir/results/collapsing"
 int_dir="$result_dir/BWA_and_picard/int_bams/$sample_name"
 fq_out_dir="$result_dir/BWA_and_picard/fastqs/$sample_name"
 bam_dir="$result_dir/BWA_and_picard/bams/$sample_name"
@@ -23,10 +24,13 @@ script_dir="$project_dir/scripts"
 picard_dir="$home_dir/local/bin"
 fgbio_dir="$home_dir/local/lib/fgbio/target/scala-2.13"
 
+mkdir -p $collapse_dir
 mkdir -p $int_dir
 mkdir -p $fq_out_dir
 mkdir -p $bam_dir
 mkdir -p $stats_dir
+
+cd $collapse_dir
 
 # call snk conda env for samtools/python:
 conda activate snkenv
@@ -78,41 +82,49 @@ fi;
 ### 1. Uncollapsed bam ###
 ##################################################################################################################################
 
-#if [ ! -f $fq_out_dir/$sample_name.withUMI.fastq ]; then
+if [ ! -f $bam_dir/$sample_name.uncollapsed.bam ]; then
 
-printf "\n\n"
-echo "--------------------------------------------------"
-echo "aligning fastq..."
-echo "--------------------------------------------------"
-printf "\n"
-bwa mem -p -t 5 $genome_dir/GRCh37.p13.genome.fa \
-  $fq_out_dir/$sample_name.withUMI.fastq > $int_dir/$sample_name.initial_mapped.bam
+  printf "\n\n"
+  echo "--------------------------------------------------"
+  echo "aligning fastq..."
+  echo "--------------------------------------------------"
+  printf "\n"
+  bwa mem -p -t 5 $genome_dir/GRCh37.p13.genome.fa \
+    $fq_out_dir/$sample_name.withUMI.fastq > $int_dir/$sample_name.initial_mapped.bam
+  
+  # create reference dƒictionary if needed:
+  #java -jar $picard_dir/picard.jar CreateSequenceDictionary -R $genome_dir/GRCh37.p13.genome.fa
+  
+  printf "\n\n"
+  echo "--------------------------------------------------"
+  echo "merging UMIs and common sequences to bam file..."
+  echo "--------------------------------------------------"
+  printf "\n"
+  java -jar $picard_dir/picard.jar MergeBamAlignment \
+    UNMAPPED=$int_dir/$sample_name.unmapped.withUMI.bam \
+    ALIGNED=$int_dir/$sample_name.initial_mapped.bam \
+    O=$int_dir/$sample_name.initial_mapped_and_UMI.bam \
+    R=$genome_dir/GRCh37.p13.genome.fa \
+    SO=coordinate ALIGNER_PROPER_PAIR_FLAGS=true MAX_GAPS=-1 \
+    ORIENTATIONS=FR VALIDATION_STRINGENCY=SILENT CREATE_INDEX=true
+  
+  printf "\n\n"
+  echo "--------------------------------------------------"
+  echo "removing fake read 1 UMI and common sequence..."
+  echo "--------------------------------------------------"
+  printf "\n"
+  
+  # remove read 1 UMI and common sequence using python script:
+  python $script_dir/1a.remove_common_sequence.py \
+    $int_dir/$sample_name.initial_mapped_and_UMI.bam
 
-# create reference dƒictionary if needed:
-#java -jar $picard_dir/picard.jar CreateSequenceDictionary -R $genome_dir/GRCh37.p13.genome.fa
+else
 
-printf "\n\n"
-echo "--------------------------------------------------"
-echo "merging UMIs and common sequences to bam file..."
-echo "--------------------------------------------------"
-printf "\n"
-java -jar $picard_dir/picard.jar MergeBamAlignment \
-  UNMAPPED=$int_dir/$sample_name.unmapped.withUMI.bam \
-  ALIGNED=$int_dir/$sample_name.initial_mapped.bam \
-  O=$int_dir/$sample_name.initial_mapped_and_UMI.bam \
-  R=$genome_dir/GRCh37.p13.genome.fa \
-  SO=coordinate ALIGNER_PROPER_PAIR_FLAGS=true MAX_GAPS=-1 \
-  ORIENTATIONS=FR VALIDATION_STRINGENCY=SILENT CREATE_INDEX=true
-
-printf "\n\n"
-echo "--------------------------------------------------"
-echo "removing fake read 1 UMI and common sequence..."
-echo "--------------------------------------------------"
-printf "\n"
-
-# remove read 1 UMI and common sequence using python script:
-python $script_dir/remove_common_sequence.py \
-  $int_dir/$sample_name.initial_mapped_and_UMI.bam
+  printf "\n"
+  echo "$bam_dir/$sample_name.uncollapsed.bam already exists, skipping to UMI collapsing step..."
+  printf "\n"
+  
+fi;
 
 # isolate discordant reads:
 samtools view -h -F 1294 $bam_dir/$sample_name.uncollapsed.bam | \
@@ -122,27 +134,37 @@ samtools index $bam_dir/$sample_name.uncollapsed.discordant.bam
 # isolate split reads:
 samtools view -h -f 2048 $bam_dir/$sample_name.uncollapsed.bam | \
   samtools view -bh > $bam_dir/$sample_name.uncollapsed.split.bam
-samtools index $int_dir/$sample_name.uncollapsed.split.bam
+samtools index $bam_dir/$sample_name.uncollapsed.split.bam
 
 
 ##################################################################################################################################
 ### 2. Collapse bam using Picard MarkDuplicates ###
 ##################################################################################################################################
 
-printf "\n\n"
-echo "--------------------------------------------------"
-echo "collapsing UMIs with Picard MarkDuplicates..."
-echo "--------------------------------------------------"
-printf "\n"
+if [ ! -f $int_dir/$sample_name.markdups.bam.bai ]; then
 
-java -jar $picard_dir/picard.jar MarkDuplicates \
-  I=$bam_dir/$sample_name.uncollapsed.bam \
-  O=$int_dir/$sample_name.markdups.bam \
-  M=$sample_name.markdups_metrics.txt \
-  BARCODE_TAG="rx" \
-  REMOVE_DUPLICATES=True
+  printf "\n\n"
+  echo "--------------------------------------------------"
+  echo "collapsing UMIs with Picard MarkDuplicates..."
+  echo "--------------------------------------------------"
+  printf "\n"
+  
+  java -jar $picard_dir/picard.jar MarkDuplicates \
+    I=$bam_dir/$sample_name.uncollapsed.bam \
+    O=$int_dir/$sample_name.markdups.bam \
+    M=$sample_name.markdups_metrics.txt \
+    BARCODE_TAG="rx" \
+    REMOVE_DUPLICATES=True
+  
+  samtools index $int_dir/$sample_name.markdups.bam
 
-samtools index $int_dir/$sample_name.markdups.bam
+else
+
+  printf "\n"
+  echo "$int_dir/$sample_name.markdups.bam already exists, skipping to read stratification step..."
+  printf "\n"
+  
+fi;
 
 
 ##################################################################################################################################
@@ -181,7 +203,7 @@ echo "removing split read duplicates and writing to $bam_dir/$sample_name.consen
 echo "---------------------------------------------------------------------------------------"
 printf "\n"
 
-python $script_dir/filter_split_reads.py $sample_name
+python $script_dir/1b.filter_split_reads.py $sample_name
 
 
 printf "\n\n"
@@ -195,8 +217,8 @@ samtools index $bam_dir/$sample_name.consensus.bam
 
 # filter and index concordant pairs:
 samtools view -hf 0x2 $bam_dir/$sample_name.consensus.bam | \
-  samtools view -bh > $bam_dir/$sample_name.markdups.concordant.pairs.bam
-samtools index $bam_dir/$sample_name.markdups.concordant.pairs.bam
+  samtools view -bh > $bam_dir/$sample_name.consensus.concordant.pairs.bam
+samtools index $bam_dir/$sample_name.consensus.concordant.pairs.bam
 
 # filter and index discordant reads:
 samtools view -h -F 1294 $bam_dir/$sample_name.consensus.bam | \

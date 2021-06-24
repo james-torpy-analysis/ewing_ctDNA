@@ -1,11 +1,42 @@
+---
+title: "VAF calculation report"
+date: "`r format(Sys.time(), '%d %B %Y')`"
+output: html_document
+params: 
+  samplename: "sample"
+---
+  
+  <style type="text/css">
+  .main-container {
+    max-width: 1200px;
+    margin-left: auto;
+    margin-right: auto;
+  }
+body{ /* Normal  */
+    font-size: 16px;
+}
+</style>
+  
+<!-- to knit document:
+library(rmarkdown)
+rmarkdown::render(
+  "/share/ScratchGeneral/jamtor/projects/ewing_ctDNA/scripts/3.calculate_fusion_VAFs.Rmd", 
+  params = list(samplename = "409_001_D9YW9_TCCTGAGC-CTCTCTAT_L001"),
+  output_file="/share/ScratchGeneral/jamtor/projects/ewing_ctDNA/results/VAF_calculation//409_001_D9YW9_TCCTGAGC-CTCTCTAT_L001/VAF_calculation_report.html"
+)
+-->
+  
+<br />
+  
+```{r, load_fusions, include = FALSE}
 
 samplename <- "409_001_D9YW9_TCCTGAGC-CTCTCTAT_L001"
 venn_cols <- c("#7C1BE2", "#1B9E77", "#EFC000FF", "blue")
 min_overlap <- 19
 disc_read_window <- 200
 
-home_dir <- "/Users/torpor/clusterHome/"
-#home_dir <- "/share/ScratchGeneral/jamtor/"
+#home_dir <- "/Users/torpor/clusterHome/"
+home_dir <- "/share/ScratchGeneral/jamtor/"
 project_dir <- paste0(home_dir, "projects/ewing_ctDNA/")
 func_dir <- paste0(project_dir, "scripts/functions/")
 result_dir <- paste0(project_dir, "results/")
@@ -140,7 +171,7 @@ param <- ScanBamParam(
   what = c(
     "rname", "pos", "qwidth", "strand", 
     "qname", "flag", "mapq", "cigar",
-    "mrnm", "mpos", "isize", "seq", "qual"
+    "seq", "qual"
   )
 )
 
@@ -166,9 +197,6 @@ if (!file.exists(paste0(Robject_dir, "VAF_calculation_reads.Rdata"))) {
       flag = bam_obj[[1]]$flag,
       mapq = bam_obj[[1]]$mapq,
       cigar = bam_obj[[1]]$cigar,
-      rnext = bam_obj[[1]]$mrnm,
-      pnext = bam_obj[[1]]$mpos,
-      tlen = bam_obj[[1]]$isize,
       seq = bam_obj[[1]]$seq,
       qual= bam_obj[[1]]$qual
     )
@@ -241,7 +269,7 @@ if (!file.exists(paste0(Robject_dir, "VAF_calculation_reads.Rdata"))) {
   
   temp_bam <- lapply(chr_filt_bam, function(x) {
 
-  	# remove multimapping reads (mapq score = 0):
+    # remove multimapping reads (mapq score = 0):
     mmappers <- unique(x$qname[x$mapq == 0])
     res <- x[!(x$qname %in% mmappers)]
     
@@ -285,7 +313,7 @@ if (!file.exists(paste0(Robject_dir, "VAF_calculation_reads.Rdata"))) {
     # record read numbers:
     read_no <- list(too_many_supp_removed = length(x))
 
-  	# remove reads with only supplementary alignments:
+    # remove reads with only supplementary alignments:
     spl <- split(x, x$qname)
 
     filt_spl <- spl[
@@ -302,10 +330,10 @@ if (!file.exists(paste0(Robject_dir, "VAF_calculation_reads.Rdata"))) {
 
     # remove unpaired reads:
     fetch_reads <- dget(paste0(func_dir, "fetch_reads.R"))
-  	singles_vs_pairs <- fetch_reads(res)
-  	
-  	# record read numbers:
-  	read_no$unpaired_removed = length(singles_vs_pairs$pairs)
+    singles_vs_pairs <- fetch_reads(res)
+    
+    # record read numbers:
+    read_no$unpaired_removed = length(singles_vs_pairs$pairs)
 
     return(
       list(
@@ -349,9 +377,9 @@ if (!file.exists(paste0(Robject_dir, "VAF_calculation_reads.Rdata"))) {
 
   # combine read objects into list:
   bam <- list(
-  	concordant_pairs = filt_bam$concordant_pairs$bam,
-  	discordant_pairs = filt_bam$discordant_pairs$bam,
-  	split_supp = temp_bam$split_supp
+    concordant_pairs = filt_bam$concordant_pairs$bam,
+    discordant_pairs = filt_bam$discordant_pairs$bam,
+    split_supp = temp_bam$split_supp
   )
   
   # remove split supps not in either concordant or discordant pair elements:
@@ -364,8 +392,8 @@ if (!file.exists(paste0(Robject_dir, "VAF_calculation_reads.Rdata"))) {
   
   # fetch split primary pairs:
   bam$split_pairs <- c(
-  	bam$concordant_pairs[bam$concordant_pairs$qname %in% bam$split_supp$qname],
-  	bam$discordant_pairs[bam$discordant_pairs$qname %in% bam$split_supp$qname]
+    bam$concordant_pairs[bam$concordant_pairs$qname %in% bam$split_supp$qname],
+    bam$discordant_pairs[bam$discordant_pairs$qname %in% bam$split_supp$qname]
   )
   
   # record read numbers:
@@ -376,7 +404,7 @@ if (!file.exists(paste0(Robject_dir, "VAF_calculation_reads.Rdata"))) {
 
   # remove split pairs from discordant pairs:
   bam$discordant_pairs <- bam$discordant_pairs[
-  	!(bam$discordant_pairs$qname %in% bam$split_pairs$qname)
+    !(bam$discordant_pairs$qname %in% bam$split_pairs$qname)
   ]
   
   # record read numbers:
@@ -457,13 +485,15 @@ plot_df$type <- factor(
 # plot:
 p <- ggplot(plot_df, aes(x=variable, y=value, fill=type))
 p <- p + geom_bar(stat="identity", position = "dodge")
-p <- p + scale_y_continuous(trans='log10')
 p <- p + scale_fill_manual(values=plot_cols)
 p <- p + ylab("No. reads (log10)")
 p <- p + theme_cowplot(12)
-p <- p + theme(
+read_filtration_barplot <- p + theme(
   axis.text.x = element_text(angle = 45, hjust = 1),
   axis.title.x=element_blank()
+)
+log10_read_filtration_barplot <- read_filtration_barplot + scale_y_continuous(
+  trans='log10'
 )
 
 
@@ -755,109 +785,6 @@ if (!file.exists(paste0(Robject_dir, "all_fusion_reads.Rdata"))) {
       paste0("Are all non-supporting reads in pairs? ", all(non_supporting_check))
     )
     
-    ### still under development ###
-    add_fusion_mates <- function(reads) {
-      
-      if (length(reads) > 0) {
-        
-        # setup mate fusion info columns:
-        reads$fusion_mate_chr <- NA
-        reads$fusion_mate_coord <- NA
-        
-        # split by read name:
-        spl <- split(reads, reads$qname)
-        
-        # annotate reads with mate info and recombine:
-        annotated <- lapply(spl, function(y) {
-          y[1]$fusion_mate_chr <- y[2]$fusion_chr
-          y[1]$fusion_mate_coord <- y[2]$fusion_coord
-          y[2]$fusion_mate_chr <- y[1]$fusion_chr
-          y[2]$fusion_mate_coord <- y[1]$fusion_coord
-          return(y)
-        })
-        annotated <- unlist(as(annotated, "GRangesList"))
-        
-        # split by chromosome:
-        spl <- split(annotated, seqnames(annotated))
-        spl <- spl[names(spl) %in% c("chr11", "chr22")]
-        
-        # split chr22 reads by fusion coordinates:
-        chr22_spl <- split(spl$chr22, spl$chr22$fusion_coord)
-        
-        # split chr11 reads by fusion mate coordinates:
-        chr11_spl <- split(spl$chr11, spl$chr11$fusion_mate_coord)
-        
-        # add together:
-        for (j in 1:length(chr22_spl)) {
-          
-          combined <- c(chr22_spl[[j]], chr11_spl[[j]])
-          names(combined) <- NULL
-          
-          if (j==1) {
-            res <- list(combined)
-            names(res)[j] <- names(chr22_spl)[j]
-          } else {
-            res[[j]] <- combined
-            names(res)[j] <- names(chr22_spl)[j]
-          }
-          
-        }
-        
-        return(res)
-        
-      } else {
-        return(reads)
-      }
-      
-    }
-    
-    # initiate cluster:
-    cl <- makeCluster(7)
-    clusterExport(
-      cl, varlist = c("spl")
-    )
-    
-    # add fusion mate position to each read pair:
-    supporting_reads <- parLapply(cl, supporting_reads, add_fusion_mates)
-    non_supporting_reads <- parLapply(cl, non_supporting_reads, add_fusion_mates)
-    
-    stopCluster(cl)
-    
-    ######
-    
-    # save pairs for each category, split by fusion:
-    if (i==1) {
-      all_pairs <- list(
-        high_conf = list(
-          supporting = list(
-            spanning = split(
-              supporting_reads$spanning, 
-              supporting_reads$spanning$fusion_coord
-            ),
-            overlapping = split(
-              supporting_reads$overlapping, 
-              supporting_reads$overlapping$fusion_coord
-            )
-          ),
-          non_supporting = non_supporting_reads
-        )
-      )
-    } else {
-      all_pairs$low_conf <- list(
-        supporting = list(
-          spanning = split(
-            supporting_reads$spanning, 
-            supporting_reads$spanning$fusion_coord
-          ),
-          overlapping = split(
-            supporting_reads$overlapping, 
-            supporting_reads$overlapping$fusion_coord
-          )
-        ),
-        non_supporting = non_supporting_reads
-      )
-    }
-    
     # remove non-primary read mate from each pair in order to split by fusion. 
     # pairs with one mate supporting one breakpoint, one supporting another
     # will be counted towards the two breakpooints when split:
@@ -929,67 +856,6 @@ if (!file.exists(paste0(Robject_dir, "all_fusion_reads.Rdata"))) {
   
 }
 
-# save bams:
-for (j in 1:length(all_pairs)) {
-  for (k in 1:length(all_pairs[[j]])) {
-    for (l in 1:length(all_pairs[[j]][[k]])) {
-      
-      # read_info <- data.frame(
-      #   chr = seqnames(all_pairs[[j]][[k]][[l]]),
-      #   start = start(all_pairs[[j]][[k]][[l]]),
-      #   end = end(all_pairs[[j]][[k]][[l]]),
-      #   qname = mcols(all_pairs[[j]][[k]][[l]])$qname
-      # )
-      # 
-      # write.table(
-      #   read_info,
-      #   paste0(
-      #     fusion_dir, names(all_pairs)[j], "_", names(all_pairs)[k],
-      #     "fusion_coord_", names(all_pairs[[j]][[k]]), "_read_info.txt"
-      #   ),
-      #   quote = FALSE,
-      #   row.names = FALSE,
-      #   col.names = TRUE
-      # )
-      
-      # format sam:
-      sam <- data.frame(
-        qname = all_pairs[[j]][[k]][[l]]$qname,
-        flag = all_pairs[[j]][[k]][[l]]$flag,
-        rname = seqnames(all_pairs[[j]][[k]][[l]]),
-        pos = start(all_pairs[[j]][[k]][[l]]),
-        mapq = all_pairs[[j]][[k]][[l]]$mapq,
-        cigar = all_pairs[[j]][[k]][[l]]$cigar,
-        rnext = all_pairs[[j]][[k]][[l]]$rnext,
-        pnext = all_pairs[[j]][[k]][[l]]$pnext,
-        tlen = all_pairs[[j]][[k]][[l]]$tlen,
-        seq = all_pairs[[j]][[k]][[l]]$seq,
-        qual = all_pairs[[j]][[k]][[l]]$qual
-      )
-      
-      # write sam to tab-separated file:
-      write.table(
-        sam,
-        paste0(
-          fusion_dir, names(all_pairs)[j], "_", names(all_pairs[[j]])[k],
-          "_fusion_coord_", names(all_pairs[[j]][[k]])[l], "_temp.sam"
-        ),
-        sep = "\t",
-        quote = FALSE,
-        row.names = FALSE,
-        col.names = FALSE
-      )
-      
-      # add bam header:
-      
-      # add bam:
-      
-      # index bam:
-      
-    }  
-  }
-}
-
 # keep breakpoints with greatest number of supporting reads:
 final_reads <- lapply(all_reads, function(x) {
   
@@ -1002,7 +868,7 @@ final_reads <- lapply(all_reads, function(x) {
   )
   
 })
-  
+
 # create venn of final reads:
 final_reads <- lapply(final_reads, function(x) {
   x$all <- unlist(
@@ -1024,28 +890,9 @@ VAFs <- lapply(final_reads, function(x) {
   )
 })
 
-# add fusion info:
-VAF_df <- rbind(
-  data.frame(
-    high_conf = VAFs$high_conf,
-    low_conf = VAFs$low_conf
-  ),
-  fusion_info <- data.frame(
-    high_conf = c(
-      chr = unique(final_reads$high_conf$supporting$fusion_chr),
-      coord = unique(final_reads$high_conf$supporting$fusion_coord)
-    ),
-    low_conf = c(
-      chr = unique(final_reads$low_conf$supporting$fusion_chr),
-      coord = unique(final_reads$low_conf$supporting$fusion_coord)
-    )
-  )
-)
-rownames(VAF_df)[1] <- "VAF"
-
 # save VAFs:
 write.table(
-  VAF_df,
+  VAFs,
   paste0(table_dir, "VAFs.txt"),
   quote = F,
   row.names = F,
@@ -1053,12 +900,107 @@ write.table(
 )
 
 
-######
-# check concordant reads for any breakpoint spanning:
-######
 
-chr22_right_of_bp <- unfilt_bam$concordant_pairs
-chr22_left_of_bp <- unfilt_bam$concordant_pairs
+```
 
-any(chr22_right_of_bp$qname %in% chr22_left_of_bp$qname)
-any(chr22_left_of_bp$qname %in% chr22_right_of_bp$qname)
+Number of high confidence EWSR1/FLI1 fusion detections =
+**`r length(fusions$high_conf)`** \
+
+Number of low confidence EWSR1/FLI1 fusion detections =
+**`r length(fusions$low_conf)`** \
+
+<br />
+
+#### **Read filtering steps**
+
+1. Removed mate of double-split supplement alignments
+
+2. Removed multimapping (mapq = 0) read pairs.
+
+3. Removed reads with > 1 supplementary alignments.
+
+4. Removed reads with only supplementary alignments.
+
+5. Removed unpaired reads.
+
+6. Removed split supplementary alignments without matching primary alignment pair.
+
+7. Removed split read pairs from discordant pairs.
+
+8. Removed reads not mapping to either chr11 or chr22.
+
+9. Created groups of concordant and discordant read pairs
+
+10. Created group of split primary alignment read pairs (read names fetched from split supplementary alignments)
+
+11. Created group of non-split concordant read pairs
+
+Ended up with three groups contributing to VAF calculations: \
+ a) non-split concordant read pairs \
+ b) non-split discordant read pairs \
+ c) split read pairs (mixture of concordant and discordant pairs)
+
+<br />
+
+```{r, echo = FALSE, message = FALSE, warning = FALSE}
+  read_filtration_barplot
+```
+
+```{r, echo = FALSE, message = FALSE, warning = FALSE}
+  log10_read_filtration_barplot
+```
+
+```{r, echo = FALSE, message = FALSE, warning = FALSE}
+  concordant_non_split_venn
+```
+
+```{r, echo = FALSE, message = FALSE, warning = FALSE}
+  concordant_split_venn
+```
+
+```{r, echo = FALSE, message = FALSE, warning = FALSE}
+  discordant_venn
+```
+
+<br />
+
+#### **Read categorisation**
+
+The following reads were separated for VAF calculations of each fusion breakpoint: \
+
+1. Fusion supporting reads
+  a) Split reads mapping over fusion breakpoints, with each overlap at least 19 bp long
+either side of the breakpoint \
+  b) Discordant reads spanning fusion breakpoint: \
+    i) one read maps completely within EWSR1, and one completely within FLI1, within 100 bp of breakpoint) \
+    ii) similar to (i), but one or both non-split discordant reads overlap the breakpoint
+
+2. Non-supporting reads
+  a) Non-split reads mapping over fusion breakpoints, with each overlap at least 19 bp long either side of the breakpoint, both mapping to EWSR1 only \
+  b) Non-discordant reads spanning fusion breakpoint (i.e. both reads map completely within EWSR1, either side of breakpoint) \
+
+
+<br />
+
+#### **VAF calculation**
+
+High confidence fusions: \
+
+```{r, echo = FALSE, message = FALSE, warning = FALSE}
+  final_venns$high_conf
+```
+
+Final VAF = **`r VAFs$high_conf`**% \
+
+Low confidence fusions: \
+
+```{r, echo = FALSE, message = FALSE, warning = FALSE}
+  final_venns$low_conf
+```
+
+Final VAF = **`r VAFs$low_conf`**% \
+
+
+
+
+

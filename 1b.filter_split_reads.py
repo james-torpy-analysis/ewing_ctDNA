@@ -15,7 +15,7 @@ out_dir = result_dir + 'BWA_and_picard/bams/' + sample_name + '/'
 
 # define input and output files:
 primbam_name = in_dir + '/' + sample_name + '.markdups.primary.bam'
-splitbam_name = in_dir + '/' + sample_name + '.markdups.split.bam'
+splitbam_name = in_dir + '/' + sample_name + '.markdups.split.supp.bam'
 bam_name = in_dir + '/' + sample_name + '.markdups.bam'
 out_name = out_dir + re.sub('markdups', 'consensus', os.path.basename(bam_name))
 
