@@ -24,17 +24,43 @@ find_spanning_discordant <- function(
     # annotate the chr11 mate with breakpoints:
     split_read_pair$fusion_chr <- NA
     split_read_pair$fusion_coord <- NA
+    split_read_pair$fusion_mate_chr <- NA
+    split_read_pair$fusion_mate_coord <- NA
     
-    split_read_pair$fusion_chr[queryHits(olaps$chr11)] <- 
-      seqnames(chr11_fusions)[subjectHits(olaps$chr11)]
-    split_read_pair$fusion_coord[queryHits(olaps$chr11)] <- 
-      start(chr11_fusions)[subjectHits(olaps$chr11)]
+    split_read_pair$fusion_chr[queryHits(olaps$chr11)] <- seqnames(chr11_fusions)[
+      subjectHits(olaps$chr11)
+    ]
+    split_read_pair$fusion_coord[queryHits(olaps$chr11)] <- start(chr11_fusions)[
+      subjectHits(olaps$chr11)
+    ]
     
-    # annotate the chr11 mate with breakpoints:
-    split_read_pair$fusion_chr[queryHits(olaps$chr22)] <- 
-      seqnames(chr22_fusions)[subjectHits(olaps$chr22)]
-    split_read_pair$fusion_coord[queryHits(olaps$chr22)] <- 
-      start(chr22_fusions)[subjectHits(olaps$chr22)]
+    # annotate the chr11 mate with mate breakpoints:
+    split_read_pair$fusion_mate_chr[queryHits(olaps$chr11)] <- as.character(
+      chr11_fusions$join_chr[subjectHits(olaps$chr11)]
+    )
+    split_read_pair$fusion_mate_coord[queryHits(olaps$chr11)] <- as.character(
+      chr11_fusions$join_coord[
+        subjectHits(olaps$chr11)
+      ]
+    )
+    
+    # annotate the chr22 mate with breakpoints:
+    split_read_pair$fusion_chr[queryHits(olaps$chr22)] <- seqnames(chr22_fusions)[
+      subjectHits(olaps$chr22)
+    ]
+    split_read_pair$fusion_coord[queryHits(olaps$chr22)] <- start(chr22_fusions)[
+      subjectHits(olaps$chr22)
+    ]
+    
+    # annotate the chr22 mate with mate breakpoints:
+    split_read_pair$fusion_mate_chr[queryHits(olaps$chr22)] <- as.character(
+      chr22_fusions$join_chr[subjectHits(olaps$chr22)]
+    )
+    split_read_pair$fusion_mate_coord[queryHits(olaps$chr22)] <- as.character(
+      chr22_fusions$join_coord[
+        subjectHits(olaps$chr22)
+      ]
+    )
     
     # check if reads on positive strand are to the left of the
     # corresponding breakpoint, allowing for non-split breakpoint overlaps:

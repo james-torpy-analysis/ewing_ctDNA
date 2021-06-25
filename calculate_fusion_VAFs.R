@@ -708,8 +708,11 @@ if (!file.exists(paste0(Robject_dir, "all_fusion_reads.Rdata"))) {
       final_bam$discordant_pairs$qname
     )
     spanning_supporting_reads <- lapply(
-      spl, find_spanning_discordant, 
-      chr11_fusions[[i]], chr22_fusions[[i]], disc_read_window
+      spl, 
+      find_spanning_discordant, 
+      chr11_fusions = chr11_fusions[[i]], 
+      chr22_fusions = chr22_fusions[[i]], 
+      exp_window = disc_read_window
     )
     
     # merge to granges object:
@@ -755,108 +758,101 @@ if (!file.exists(paste0(Robject_dir, "all_fusion_reads.Rdata"))) {
       paste0("Are all non-supporting reads in pairs? ", all(non_supporting_check))
     )
     
-    ### still under development ###
-    add_fusion_mates <- function(reads) {
+    ### the following seems to be doubling read number - check ###
+    # split by fusion coords:
+    split_by_coord <- function(reads, read_type) {
       
-      if (length(reads) > 0) {
-        
-        # setup mate fusion info columns:
-        reads$fusion_mate_chr <- NA
-        reads$fusion_mate_coord <- NA
-        
-        # split by read name:
+      # create a 'splitting_coord' column with only chr22 fusion coords to 
+      # avoid doubling up:
+      reads$splitting_coord <- reads$fusion_coord
+      reads$splitting_coord[
+        reads$fusion_chr == "chr11" & !is.na(reads$fusion_chr)
+      ] <- reads$fusion_mate_coord[
+        reads$fusion_chr == "chr11" & !is.na(reads$fusion_chr)
+      ]
+      
+      if (read_type == "overlapping") {
+        # duplicate read pairs with each mate split over two different fusion 
+        # breakpoints:
         spl <- split(reads, reads$qname)
-        
-        # annotate reads with mate info and recombine:
-        annotated <- lapply(spl, function(y) {
-          y[1]$fusion_mate_chr <- y[2]$fusion_chr
-          y[1]$fusion_mate_coord <- y[2]$fusion_coord
-          y[2]$fusion_mate_chr <- y[1]$fusion_chr
-          y[2]$fusion_mate_coord <- y[1]$fusion_coord
-          return(y)
-        })
-        annotated <- unlist(as(annotated, "GRangesList"))
-        
-        # split by chromosome:
-        spl <- split(annotated, seqnames(annotated))
-        spl <- spl[names(spl) %in% c("chr11", "chr22")]
-        
-        # split chr22 reads by fusion coordinates:
-        chr22_spl <- split(spl$chr22, spl$chr22$fusion_coord)
-        
-        # split chr11 reads by fusion mate coordinates:
-        chr11_spl <- split(spl$chr11, spl$chr11$fusion_mate_coord)
-        
-        # add together:
-        for (j in 1:length(chr22_spl)) {
+        spl <- lapply(spl, function(y) {
           
-          combined <- c(chr22_spl[[j]], chr11_spl[[j]])
-          names(combined) <- NULL
-          
-          if (j==1) {
-            res <- list(combined)
-            names(res)[j] <- names(chr22_spl)[j]
-          } else {
-            res[[j]] <- combined
-            names(res)[j] <- names(chr22_spl)[j]
+          # if splitting coord for one read is NA, change to coord of other read:
+          if (any(is.na(y$splitting_coord))) {
+            y$splitting_coord[is.na(y$splitting_coord)] <- y$splitting_coord[
+              !is.na(y$splitting_coord)
+            ]
           }
           
-        }
-        
-        return(res)
-        
+          # if 1st splitting coord != 2nd, means reads are split over different
+          # fusions - duplicate each read and label 1st pair with 1st splitting
+          # coord, 2nd with 2nd:
+          if (y[1]$splitting_coord != y[2]$splitting_coord) {
+            y <- c(y, y)
+            y$splitting_coord[1:2] <- y$splitting_coord[1]
+            y$splitting_coord[3:4] <- y$splitting_coord[4]
+          }
+          
+          return(y)
+          
+        })
+        res <- unlist(
+          as(
+            spl, "GRangesList"
+          )
+        )
       } else {
-        return(reads)
+        res <- reads
       }
       
+      # split by fusion:
+      return(split(res, res$splitting_coord))
+      
     }
-    
-    # initiate cluster:
-    cl <- makeCluster(7)
-    clusterExport(
-      cl, varlist = c("spl")
-    )
-    
-    # add fusion mate position to each read pair:
-    supporting_reads <- parLapply(cl, supporting_reads, add_fusion_mates)
-    non_supporting_reads <- parLapply(cl, non_supporting_reads, add_fusion_mates)
-    
-    stopCluster(cl)
-    
-    ######
     
     # save pairs for each category, split by fusion:
     if (i==1) {
       all_pairs <- list(
         high_conf = list(
           supporting = list(
-            spanning = split(
+            spanning = split_by_coord(
               supporting_reads$spanning, 
-              supporting_reads$spanning$fusion_coord
+              read_type = "spanning"
             ),
-            overlapping = split(
+            overlapping = split_by_coord(
               supporting_reads$overlapping, 
-              supporting_reads$overlapping$fusion_coord
+              read_type = "overlapping"
             )
           ),
-          non_supporting = non_supporting_reads
+          non_supporting = list(
+            spanning = split_by_coord(
+              non_supporting_reads$spanning, 
+              read_type = "spanning"
+            ),
+            overlapping = split_by_coord(
+              non_supporting_reads$overlapping, 
+              read_type = "overlapping"
+            )
+          )
         )
       )
     } else {
       all_pairs$low_conf <- list(
         supporting = list(
-          spanning = split(
+          spanning = split_by_coord(
             supporting_reads$spanning, 
-            supporting_reads$spanning$fusion_coord
+            read_type = "spanning"
           ),
-          overlapping = split(
+          overlapping = split_by_coord(
             supporting_reads$overlapping, 
-            supporting_reads$overlapping$fusion_coord
+            read_type = "overlapping"
           )
         ),
         non_supporting = non_supporting_reads
       )
     }
+    
+    ######
     
     # remove non-primary read mate from each pair in order to split by fusion. 
     # pairs with one mate supporting one breakpoint, one supporting another
@@ -866,10 +862,10 @@ if (!file.exists(paste0(Robject_dir, "all_fusion_reads.Rdata"))) {
       # split reads by name:
       spl <- split(reads, reads$qname)
       
-      res <- lapply(spl, function(x) {
+      res <- lapply(spl, function(reads) {
         
         # remove read with no overlapping fusion coord:
-        filt_read <- x[!is.na(x$fusion_coord)]
+        filt_read <- reads[!is.na(reads$fusion_coord)]
         
         # if there are still 2 reads, remove the one mapped to chromosome 11:
         if (length(filt_read) > 1) {
