@@ -1,11 +1,24 @@
 find_overlapping_reads <- function(
   read_pair,
-  fusions,
+  fusion,
   chromosome
 ) {
   
-  # find overlaps with fusions:
-  olaps <- findOverlaps(read_pair, fusions)
+  # if finding overlaps with chr11 fusion coord, make this coord main one:
+  if (chromosome == "chr11") {
+    
+    fusion <- GRanges(
+      seqnames = fusion$join_chr,
+      ranges = IRanges(start = fusion$join_coord, end = fusion$join_coord),
+      strand = "*",
+      join_chr = seqnames(fusion),
+      join_coord = start(fusion)
+    )
+    
+  }
+  
+  # find overlaps with fusion:
+  olaps <- findOverlaps(read_pair, fusion)
   
   if (length(olaps) > 0) {
     
@@ -16,15 +29,15 @@ find_overlapping_reads <- function(
     read_pair$fusion_mate_coord <- NA
     
     read_pair[queryHits(olaps)]$fusion_chr <- chromosome
-    read_pair[queryHits(olaps)]$fusion_coord <- start(fusions)[
-      queryHits(olaps)
+    read_pair[queryHits(olaps)]$fusion_coord <- start(fusion)[
+      subjectHits(olaps)
     ]
     
     read_pair[queryHits(olaps)]$fusion_mate_chr <- as.character(
-      unique(fusions$join_chr)
+      unique(fusion$join_chr)
     )
-    read_pair[queryHits(olaps)]$fusion_mate_coord <- fusions$join_coord[
-      queryHits(olaps)
+    read_pair[queryHits(olaps)]$fusion_mate_coord <- fusion$join_coord[
+      subjectHits(olaps)
     ]
     
     # remove reads with end or start co-ordinates equal to breakpoint position,
