@@ -1,9 +1,18 @@
 find_spanning_discordant <- function(
   split_read_pair,
-  chr11_fusions,
-  chr22_fusions,
+  fusions,
   exp_window = 200
 ) {
+  
+  # separate chr11 and chr2 fusion bps:
+  chr22_fusions <- fusions
+  chr11_fusions <- GRanges(
+    seqnames = fusions$join_chr,
+    ranges = IRanges(start = fusions$join_coord, end = fusions$join_coord),
+    strand = "*",
+    join_chr = seqnames(fusions),
+    join_coord = start(fusions)
+  )
   
   # make breakpoint windows:
   chr11_windows <- resize(chr11_fusions, exp_window+1)
