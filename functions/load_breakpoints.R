@@ -63,10 +63,23 @@ load_breakpoints <- function(samplename, in_dir, high_conf = TRUE) {
 
       }
       
-      # add rownames and transpose additional_info:
-      additional_info <- additional_info %>%
-        column_to_rownames("info_terms")
-      additional_info <- as.data.frame(t(additional_info))
+      # add any missing essential terms:
+      essential_info <- data.frame(
+        info_terms = c(
+          "DISC_MAPQ", "EVDNC", "SVTYPE", "MAPQ", 
+          "MATEID", "MATENM", "NM", "NUMPARTS"
+        )
+      )
+      
+      essential_info <- merge(
+        essential_info, additional_info, by = "info_terms", all = T
+      )
+      essential_info <- as.data.frame(
+        t(
+          essential_info %>%
+            column_to_rownames("info_terms")
+        )
+      )
 
       # convert to GRanges and remove alternate chromosome scaffolds:
       gr <- GRanges(
@@ -88,14 +101,14 @@ load_breakpoints <- function(samplename, in_dir, high_conf = TRUE) {
         ),
         quality = vcf_df$V6,
         filter = vcf_df$V7,
-        DISC_MAPQ = additional_info$DISC_MAPQ,
-        EVDNC = additional_info$EVDNC,
-        type = additional_info$SVTYPE,
-        MAPQ = additional_info$MAPQ,
-        MATEID = additional_info$MATEID,
-        MATENM = additional_info$MATENM ,
-        NM = additional_info$NM,
-        NUMPARTS = additional_info$NUMPARTS
+        DISC_MAPQ = essential_info$DISC_MAPQ,
+        EVDNC = essential_info$EVDNC,
+        type = essential_info$SVTYPE,
+        MAPQ = essential_info$MAPQ,
+        MATEID = essential_info$MATEID,
+        MATENM = essential_info$MATENM ,
+        NM = essential_info$NM,
+        NUMPARTS = essential_info$NUMPARTS
       )
 
       return(gr)

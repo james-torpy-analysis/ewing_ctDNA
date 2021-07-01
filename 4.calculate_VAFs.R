@@ -1,19 +1,22 @@
+args = commandArgs(trailingOnly=TRUE)
 
-samplename <- "409_002_D9YW9_GGACTCCT-CTCTCTAT_L001"
+samplename <- args[1]
+#samplename <- "409_066_DCKVC_AAGAGGCA-CTCTCTAT_L001"
+
 venn_cols <- c("#7C1BE2", "#1B9E77", "#EFC000FF", "blue")
 min_overlap <- 19
 disc_read_window <- 200
 same_fusion_window <- 10
 
-home_dir <- "/Users/torpor/clusterHome/"
-#home_dir <- "/share/ScratchGeneral/jamtor/"
+#home_dir <- "/Users/torpor/clusterHome/"
+home_dir <- "/share/ScratchGeneral/jamtor/"
 project_dir <- paste0(home_dir, "projects/ewing_ctDNA/")
 func_dir <- paste0(project_dir, "scripts/functions/")
 result_dir <- paste0(project_dir, "results/")
 Robject_dir <- paste0(result_dir, "VAF_calculation/", samplename, "/Rdata/")
-table_dir <- paste0(result_dir, "VAF_calculation/", samplename, "/tables/")
+out_dir <- paste0(result_dir, "VAF_calculation/", samplename, "/")
 system(paste0("mkdir -p ", Robject_dir))
-system(paste0("mkdir -p ", table_dir))
+system(paste0("mkdir -p ", out_dir))
 
 fusion_dir <- paste0(result_dir, "fusions/", samplename, "/")
 bam_path <- paste0(result_dir, "BWA_and_picard/bams/")
@@ -106,55 +109,45 @@ plot_cols <- plot_cols[c(1:3, 5, 4, 6:length(plot_cols))]
 
 # load in fusions:
 fusions <- readRDS(paste0(fusion_dir, "EWSR1_GOI_fusions.Rdata"))
-
 fusions <- fusions$high_conf$true_positives$fusions$FLI1
+
 # make chr22 coord main fusion coord:
-fusions <- lapply(fusions, function(x) {
-  return(
-    GRanges(
-      seqnames = x$join_chr,
-      ranges = IRanges(start = x$join_coord, end = x$join_coord),
-      strand = "*",
-      join_chr = seqnames(x),
-      join_coord = start(x)
-    )
-  )
-})
+fusions <- GRanges(
+  seqnames = fusions$join_chr,
+  ranges = IRanges(start = fusions$join_coord, end = fusions$join_coord),
+  strand = "*",
+  join_chr = seqnames(fusions),
+  join_coord = start(fusions)
+)
 
 # combine fusions with <= same_fusion_window bp difference in coord:
-fusions <- lapply(fusions, function(x) {
+fusions$remove <- FALSE
+
+for (i in 1:length(fusions)) {
   
-  x$remove <- FALSE
-  
-  for (i in 1:length(x)) {
+  if (!(fusions$remove[i])) {
     
-    if (!(x$remove[i])) {
+    chr22_window <- (start(fusions[i])-same_fusion_window):(start(fusions[i])+same_fusion_window)
+    chr11_window <- (fusions[i]$join_coord-same_fusion_window):(fusions[i]$join_coord+same_fusion_window)
+    
+    # check each other fusion to see whether both chr11 and 22 coord is close
+    # enough to those of another fusion to justify removing one of them:
+    for (j in 1:length(fusions)) {
       
-      chr22_window <- (start(x[i])-same_fusion_window):(start(x[i])+same_fusion_window)
-      chr11_window <- (x[i]$join_coord-same_fusion_window):(x[i]$join_coord+same_fusion_window)
-      
-      # check each other fusion to see whether both chr11 and 22 coord is close
-      # enough to those of another fusion to justify removing one of them:
-      for (j in 1:length(x)) {
-        
-        if (j!=i & start(x)[j] %in% chr22_window & 
-            x$join_coord[j] %in% chr11_window) {
-          x$remove[j] <- TRUE
-        }
-        
+      if (j!=i & start(fusions)[j] %in% chr22_window & 
+          fusions$join_coord[j] %in% chr11_window) {
+        fusions$remove[j] <- TRUE
       }
       
     }
     
   }
-    
-  # remove those marked as the same as another fusion:
-  res <- x[!(x$remove)]
-  mcols(res) <- subset(res, select = -remove)
   
-  return(res)
-  
-})
+}
+
+# remove those marked as the same as another fusion:
+fusions <- fusions[!(fusions$remove)]
+mcols(fusions) <- subset(fusions, select = -remove)
 
 # load filtered reads:
 filtered_reads <- readRDS(paste0(Robject_dir, "VAF_calculation_reads.Rdata"))
@@ -164,10 +157,8 @@ filtered_reads <- readRDS(paste0(Robject_dir, "VAF_calculation_reads.Rdata"))
 ### 2. find breakpoint-overlapping reads: ###
 ####################################################################################
 
-if (!file.exists(paste0(Robject_dir, "high_conf_fusion_reads.Rdata"))) {
+if (!file.exists(paste0(Robject_dir, "high_conf_overlapping_reads.Rdata"))) {
   
-  fusions <- fusions$high_conf
-    
   # create empty list to be filled:
   temp_list <- list(
     spanning = NULL,
@@ -227,6 +218,8 @@ if (!file.exists(paste0(Robject_dir, "high_conf_fusion_reads.Rdata"))) {
     )
     names(overlapping_reads) <- NULL
     
+    # make NULL entries empty GRanges object, to keep consistent with other
+    # all_reads elements:
     if (!is.null(overlapping_reads)) {
       all_reads[[i]]$non_supporting$overlapping <- overlapping_reads
     } else {
@@ -268,6 +261,7 @@ if (!file.exists(paste0(Robject_dir, "high_conf_fusion_reads.Rdata"))) {
     )
     names(overlapping_reads) <- NULL
     
+    # make NULL entries empty GRanges object:
     if (!is.null(overlapping_reads)) {
       all_reads[[i]]$supporting$overlapping <- overlapping_reads
     } else {
@@ -309,7 +303,7 @@ if (!file.exists(paste0(Robject_dir, "high_conf_fusion_reads.Rdata"))) {
     return(
       lapply(x, function(y) {
         
-        if (length(x[[i]]$overlapping > 0)) {
+        if (length(y$overlapping) > 0) {
         
           # deduplicate reads:
           spl <- split(y$overlapping, y$overlapping$qname)
@@ -337,10 +331,18 @@ if (!file.exists(paste0(Robject_dir, "high_conf_fusion_reads.Rdata"))) {
     
   })
 
+  saveRDS(all_reads, paste0(Robject_dir, "high_conf_overlapping_reads.Rdata"))
   
-  ####################################################################################
-  ### 3. Find breakpoint-spanning reads ###
-  ####################################################################################
+} else {
+  all_reads <- readRDS(paste0(Robject_dir, "high_conf_overlapping_reads.Rdata"))
+}
+
+  
+####################################################################################
+### 3. Find breakpoint-spanning reads ###
+####################################################################################
+
+if (!file.exists(paste0(Robject_dir, "high_conf_fusion_reads.Rdata"))) {
   
   # find breakpoint-spanning reads from non-split non-discordant reads, 
   # add to spanning$non_supporting:
@@ -431,212 +433,217 @@ if (!file.exists(paste0(Robject_dir, "high_conf_fusion_reads.Rdata"))) {
     }
   }
   
-  # find breakpoint-spanning reads from discordant reads, 
-  # add to spanning$supporting:
-  spl <- split(
-    filtered_reads$discordant_pairs, 
-    filtered_reads$discordant_pairs$qname
-  )
-  
-  for (i in 1:length(fusions)) {
+  if (length(filtered_reads$discordant_pairs) > 0) {
     
-    spanning_reads <- lapply(
-      spl, 
-      find_spanning_discordant, 
-      fusions = fusions[i], 
-      exp_window = disc_read_window
+    # find breakpoint-spanning reads from discordant reads, 
+    # add to spanning$supporting:
+    spl <- split(
+      filtered_reads$discordant_pairs, 
+      filtered_reads$discordant_pairs$qname
     )
     
-    # merge to granges object:
-    spanning_reads <- unlist(
-      as(
-        spanning_reads[
-          sapply(spanning_reads, function(x) !is.null(x))
-        ], "GRangesList"
+    for (i in 1:length(fusions)) {
+      
+      spanning_reads <- lapply(
+        spl, 
+        find_spanning_discordant, 
+        fusions = fusions[i], 
+        exp_window = disc_read_window
       )
-    )
-    names(spanning_reads) <- NULL
-    
-    if (!is.null(overlapping_reads)) {
-      all_reads[[i]]$supporting$spanning <- spanning_reads
-    } else {
-      all_reads[[i]]$supporting$spanning <- GRanges(NULL)
-    }
-    
-  }
-  
-  
-  ####################################################################################
-  ### 4. Calculate proportions of non-supporting vs supporting read pairs for each
-  # sample ###
-  ####################################################################################
-  
-  # combine all supporting reads, and all non-supporting reads, for each fusion:
-  combined_reads <- lapply(all_reads, function(x) {
-    return(
-      lapply(x, function(y) {
-        return(c(y$spanning, y$overlapping))
-      })
-    )
-  })
-  
-  # check all reads are in pairs:
-  pair_check <- lapply(combined_reads, function(x) {
-    sapply(x, function(y) {
-      spl <- split(y, y$qname)
-      return(
-        all(
-          sapply(spl, function(z) {
-            length(z) == 2
-          })
+      
+      # merge to granges object:
+      spanning_reads <- unlist(
+        as(
+          spanning_reads[
+            sapply(spanning_reads, function(x) !is.null(x))
+          ], "GRangesList"
         )
       )
-    })
-  })
-    
-  print(
-    paste0(
-      "Are all supporting reads in pairs? ", 
-      all(sapply(pair_check, function(x) x[names(x) == "supporting"]))
-    )
-  )
-  
-  print(
-    paste0(
-      "Are all non-supporting reads in pairs? ", 
-      all(sapply(pair_check, function(x) x[names(x) == "non_supporting"]))
-    )
-  )
-  
-  save.image(paste0(Robject_dir, "temp_image.Rdata"))
-  
-  # save each group as sam file:
-  for (i in 1:length(all_reads)) {
-    for (j in 1:length(all_reads[[i]])) {
-      for (k in 1:length(all_reads[[i]][[j]])) {
-        
-        if (length(all_reads[[i]][[j]][[k]]) > 0) {
-          
-          # define sam cols:
-          sam <- data.frame(
-            qname = all_reads[[i]][[j]][[k]]$qname,
-            flag = all_reads[[i]][[j]][[k]]$flag,
-            rname = seqnames(all_reads[[i]][[j]][[k]]),
-            pos = start(all_reads[[i]][[j]][[k]]),
-            mapq = all_reads[[i]][[j]][[k]]$mapq,
-            cigar = all_reads[[i]][[j]][[k]]$cigar,
-            rnext = all_reads[[i]][[j]][[k]]$rnext,
-            pnext = all_reads[[i]][[j]][[k]]$pnext,
-            tlen = all_reads[[i]][[j]][[k]]$tlen,
-            seq = all_reads[[i]][[j]][[k]]$seq,
-            qual = all_reads[[i]][[j]][[k]]$qual
-          )
-          
-          # write sam to tab-separated file:
-          write.table(
-            sam,
-            paste0(
-              fusion_dir, "fusion_coord_", names(all_reads)[i], "_", 
-              names(all_reads[[i]])[j],"_", names(all_reads[[i]][[j]])[k], 
-              "_reads_temp.sam"
-            ),
-            sep = "\t",
-            quote = FALSE,
-            row.names = FALSE,
-            col.names = FALSE
-          )
-          
-          # add header:
-          system(
-            paste0(
-              "samtools view -H ", 
-              bam_path, samplename, "/", samplename, ".consensus.concordant.pairs.bam",
-              " > ",
-              fusion_dir, "fusion_coord_", names(all_reads)[i], "_", 
-              names(all_reads[[i]])[j],"_", names(all_reads[[i]][[j]])[k], 
-              "_reads.sam"
-            )
-          )
-          
-          # add rest of sam:
-          system(
-            paste0(
-              "cat ", 
-              fusion_dir, "fusion_coord_", names(all_reads)[i], "_", 
-              names(all_reads[[i]])[j],"_", names(all_reads[[i]][[j]])[k], 
-              "_reads_temp.sam", 
-              " >> ",
-              fusion_dir, "fusion_coord_", names(all_reads)[i], "_", 
-              names(all_reads[[i]])[j],"_", names(all_reads[[i]][[j]])[k], 
-              "_reads.sam"
-            )
-          )
-          
-          # convert to bam:
-          system(
-            paste0(
-              "samtools view -bh ", 
-              fusion_dir, "fusion_coord_", names(all_reads)[i], "_", 
-              names(all_reads[[i]])[j],"_", names(all_reads[[i]][[j]])[k], 
-              "_reads.sam",
-              " > ",
-              fusion_dir, "fusion_coord_", names(all_reads)[i], "_", 
-              names(all_reads[[i]])[j],"_", names(all_reads[[i]][[j]])[k], 
-              "_reads.bam"
-            )
-          )
-          
-          # sort:
-          system(
-            paste0(
-              "samtools sort -o ",
-              fusion_dir, "fusion_coord_", names(all_reads)[i], "_", 
-              names(all_reads[[i]])[j],"_", names(all_reads[[i]][[j]])[k], 
-              "_reads.sorted.bam ",
-              fusion_dir, "fusion_coord_", names(all_reads)[i], "_", 
-              names(all_reads[[i]])[j],"_", names(all_reads[[i]][[j]])[k], 
-              "_reads.bam"
-            )
-          )
-          
-          # index:
-          system(
-            paste0(
-              "samtools index ",
-              fusion_dir, "fusion_coord_", names(all_reads)[i], "_", 
-              names(all_reads[[i]])[j],"_", names(all_reads[[i]][[j]])[k], 
-              "_reads.sorted.bam"
-            )
-          )
-          
-          # clean:
-          system(
-            paste0(
-              "rm ",
-              fusion_dir, "fusion_coord_", names(all_reads)[i], "_", 
-              names(all_reads[[i]])[j],"_", names(all_reads[[i]][[j]])[k], 
-              "_reads_temp.sam ",
-              fusion_dir, "fusion_coord_", names(all_reads)[i], "_", 
-              names(all_reads[[i]])[j],"_", names(all_reads[[i]][[j]])[k], 
-              "_reads.sam ",
-              fusion_dir, "fusion_coord_", names(all_reads)[i], "_", 
-              names(all_reads[[i]])[j],"_", names(all_reads[[i]][[j]])[k], 
-              "_reads.bam"
-            )
-          )
-          
-        }
-        
+      names(spanning_reads) <- NULL
+      
+      if (!is.null(overlapping_reads)) {
+        all_reads[[i]]$supporting$spanning <- spanning_reads
+      } else {
+        all_reads[[i]]$supporting$spanning <- GRanges(NULL)
       }
+      
     }
+    
+  } else {
+    all_reads[[i]]$supporting$spanning <- GRanges(NULL)
   }
-
+ 
   saveRDS(all_reads, paste0(Robject_dir, "high_conf_fusion_reads.Rdata"))
   
 } else {
   
   all_reads <- readRDS(paste0(Robject_dir, "high_conf_fusion_reads.Rdata"))
   
+}
+  
+####################################################################################
+### 4. Calculate proportions of non-supporting vs supporting read pairs for each
+# sample ###
+####################################################################################
+
+# combine all supporting reads, and all non-supporting reads, for each fusion:
+combined_reads <- lapply(all_reads, function(x) {
+  return(
+    lapply(x, function(y) {
+      return(c(y$spanning, y$overlapping))
+    })
+  )
+})
+
+# check all reads are in pairs:
+pair_check <- lapply(combined_reads, function(x) {
+  sapply(x, function(y) {
+    spl <- split(y, y$qname)
+    return(
+      all(
+        sapply(spl, function(z) {
+          length(z) == 2
+        })
+      )
+    )
+  })
+})
+  
+print(
+  paste0(
+    "Are all supporting reads in pairs? ", 
+    all(sapply(pair_check, function(x) x[names(x) == "supporting"]))
+  )
+)
+
+print(
+  paste0(
+    "Are all non-supporting reads in pairs? ", 
+    all(sapply(pair_check, function(x) x[names(x) == "non_supporting"]))
+  )
+)
+
+#save.image(paste0(Robject_dir, "temp_image.Rdata"))
+
+# save each group as sam file:
+for (i in 1:length(all_reads)) {
+  for (j in 1:length(all_reads[[i]])) {
+    for (k in 1:length(all_reads[[i]][[j]])) {
+      
+      if (length(all_reads[[i]][[j]][[k]]) > 0) {
+        
+        # define sam cols:
+        sam <- data.frame(
+          qname = all_reads[[i]][[j]][[k]]$qname,
+          flag = all_reads[[i]][[j]][[k]]$flag,
+          rname = seqnames(all_reads[[i]][[j]][[k]]),
+          pos = start(all_reads[[i]][[j]][[k]]),
+          mapq = all_reads[[i]][[j]][[k]]$mapq,
+          cigar = all_reads[[i]][[j]][[k]]$cigar,
+          rnext = all_reads[[i]][[j]][[k]]$rnext,
+          pnext = all_reads[[i]][[j]][[k]]$pnext,
+          tlen = all_reads[[i]][[j]][[k]]$tlen,
+          seq = all_reads[[i]][[j]][[k]]$seq,
+          qual = all_reads[[i]][[j]][[k]]$qual
+        )
+        
+        # write sam to tab-separated file:
+        write.table(
+          sam,
+          paste0(
+            fusion_dir, "fusion_coord_", names(all_reads)[i], "_", 
+            names(all_reads[[i]])[j],"_", names(all_reads[[i]][[j]])[k], 
+            "_reads_temp.sam"
+          ),
+          sep = "\t",
+          quote = FALSE,
+          row.names = FALSE,
+          col.names = FALSE
+        )
+        
+        # add header:
+        system(
+          paste0(
+            "samtools view -H ", 
+            bam_path, samplename, "/", samplename, ".consensus.concordant.pairs.bam",
+            " > ",
+            fusion_dir, "fusion_coord_", names(all_reads)[i], "_", 
+            names(all_reads[[i]])[j],"_", names(all_reads[[i]][[j]])[k], 
+            "_reads.sam"
+          )
+        )
+        
+        # add rest of sam:
+        system(
+          paste0(
+            "cat ", 
+            fusion_dir, "fusion_coord_", names(all_reads)[i], "_", 
+            names(all_reads[[i]])[j],"_", names(all_reads[[i]][[j]])[k], 
+            "_reads_temp.sam", 
+            " >> ",
+            fusion_dir, "fusion_coord_", names(all_reads)[i], "_", 
+            names(all_reads[[i]])[j],"_", names(all_reads[[i]][[j]])[k], 
+            "_reads.sam"
+          )
+        )
+        
+        # convert to bam:
+        system(
+          paste0(
+            "samtools view -bh ", 
+            fusion_dir, "fusion_coord_", names(all_reads)[i], "_", 
+            names(all_reads[[i]])[j],"_", names(all_reads[[i]][[j]])[k], 
+            "_reads.sam",
+            " > ",
+            fusion_dir, "fusion_coord_", names(all_reads)[i], "_", 
+            names(all_reads[[i]])[j],"_", names(all_reads[[i]][[j]])[k], 
+            "_reads.bam"
+          )
+        )
+        
+        # sort:
+        system(
+          paste0(
+            "samtools sort -o ",
+            fusion_dir, "fusion_coord_", names(all_reads)[i], "_", 
+            names(all_reads[[i]])[j],"_", names(all_reads[[i]][[j]])[k], 
+            "_reads.sorted.bam ",
+            fusion_dir, "fusion_coord_", names(all_reads)[i], "_", 
+            names(all_reads[[i]])[j],"_", names(all_reads[[i]][[j]])[k], 
+            "_reads.bam"
+          )
+        )
+        
+        # index:
+        system(
+          paste0(
+            "samtools index ",
+            fusion_dir, "fusion_coord_", names(all_reads)[i], "_", 
+            names(all_reads[[i]])[j],"_", names(all_reads[[i]][[j]])[k], 
+            "_reads.sorted.bam"
+          )
+        )
+        
+        # clean:
+        system(
+          paste0(
+            "rm ",
+            fusion_dir, "fusion_coord_", names(all_reads)[i], "_", 
+            names(all_reads[[i]])[j],"_", names(all_reads[[i]][[j]])[k], 
+            "_reads_temp.sam ",
+            fusion_dir, "fusion_coord_", names(all_reads)[i], "_", 
+            names(all_reads[[i]])[j],"_", names(all_reads[[i]][[j]])[k], 
+            "_reads.sam ",
+            fusion_dir, "fusion_coord_", names(all_reads)[i], "_", 
+            names(all_reads[[i]])[j],"_", names(all_reads[[i]][[j]])[k], 
+            "_reads.bam"
+          )
+        )
+        
+      }
+      
+    }
+  }
 }
 
 # keep breakpoints with greatest number of supporting reads:
@@ -651,9 +658,9 @@ read_counts <- sapply(combined_reads, function(x) {
 final_reads <- all_reads[[which.max(read_counts["supporting",])]]
 final_combined <- combined_reads[[which.max(read_counts["supporting",])]]
 
-final_venns <- lapply(final_reads, function(x) {
-  return(lapply(x, create_venn, venn_cols))
-})
+# final_venns <- lapply(final_reads, function(x) {
+#   return(lapply(x, create_venn, venn_cols))
+# })
 
 # calculate supporting vs non-supporting proportion:
 VAF <- round(
@@ -664,7 +671,7 @@ VAF <- round(
 # save VAF:
 write.table(
   VAF,
-  paste0(table_dir, "fusion", names(final_reads), "_VAF.txt"),
+  paste0(out_dir, "VAF.txt"),
   quote = F,
   row.names = F,
   col.names = F

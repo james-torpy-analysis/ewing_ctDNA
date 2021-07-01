@@ -1,9 +1,12 @@
 
-samplename <- "409_002_D9YW9_GGACTCCT-CTCTCTAT_L001"
+args = commandArgs(trailingOnly=TRUE)
+
+samplename <- args[1]
+#samplename <- "409_040_DCKVC_GGACTCCT-CTCTCTAT_L001"
 venn_cols <- c("#7C1BE2", "#1B9E77", "#EFC000FF", "blue")
 
-home_dir <- "/Users/torpor/clusterHome/"
-#home_dir <- "/share/ScratchGeneral/jamtor/"
+#home_dir <- "/Users/torpor/clusterHome/"
+home_dir <- "/share/ScratchGeneral/jamtor/"
 project_dir <- paste0(home_dir, "projects/ewing_ctDNA/")
 func_dir <- paste0(project_dir, "scripts/functions/")
 result_dir <- paste0(project_dir, "results/")
