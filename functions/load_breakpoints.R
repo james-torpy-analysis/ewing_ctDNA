@@ -98,15 +98,18 @@ load_breakpoints <- function(samplename, in_dir, high_conf = TRUE) {
         NUMPARTS = additional_info$NUMPARTS
       )
 
+      return(gr)
+
     } else {
-      print("ERROR: VCF data is not in correct format for ", samplename,
-        ", please check")
+      print(paste0("VCF data is not in correct format for ", samplename,
+        ", returning NA"))
+      return(NA)
     }
 
   } else {
-    print("ERROR: no VCF file exists for ", samplename)
+    print(paste0("VCF file empty or no VCF file exists for ", samplename,
+        ", returning NA"))
+    return(NA)
   }
-  
-  return(gr)
 
   }

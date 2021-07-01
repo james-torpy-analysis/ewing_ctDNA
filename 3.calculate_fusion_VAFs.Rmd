@@ -21,8 +21,8 @@ body{ /* Normal  */
 library(rmarkdown)
 rmarkdown::render(
   "/share/ScratchGeneral/jamtor/projects/ewing_ctDNA/scripts/3.calculate_fusion_VAFs.Rmd", 
-  params = list(samplename = "409_001_D9YW9_TCCTGAGC-CTCTCTAT_L001"),
-  output_file="/share/ScratchGeneral/jamtor/projects/ewing_ctDNA/results/VAF_calculation//409_001_D9YW9_TCCTGAGC-CTCTCTAT_L001/VAF_calculation_report.html"
+  params = list(samplename = "409_002_D9YW9_GGACTCCT-CTCTCTAT_L001"),
+  output_file="/share/ScratchGeneral/jamtor/projects/ewing_ctDNA/results/VAF_calculation/409_002_D9YW9_GGACTCCT-CTCTCTAT_L001/VAF_calculation_report.html"
 )
 -->
   
@@ -30,7 +30,8 @@ rmarkdown::render(
   
 ```{r, load_fusions, include = FALSE}
 
-  samplename <- "409_001_D9YW9_TCCTGAGC-CTCTCTAT_L001"
+  samplename <- params$samplename
+  #samplename <- "409_002_D9YW9_GGACTCCT-CTCTCTAT_L001"
   venn_cols <- c("#7C1BE2", "#1B9E77", "#EFC000FF", "blue")
   min_overlap <- 19
   disc_read_window <- 200
@@ -42,9 +43,9 @@ rmarkdown::render(
   func_dir <- paste0(project_dir, "scripts/functions/")
   result_dir <- paste0(project_dir, "results/")
   Robject_dir <- paste0(result_dir, "VAF_calculation/", samplename, "/Rdata/")
-  table_dir <- paste0(result_dir, "VAF_calculation/", samplename, "/tables/")
+  out_dir <- paste0(result_dir, "VAF_calculation/", samplename, "/")
   system(paste0("mkdir -p ", Robject_dir))
-  system(paste0("mkdir -p ", table_dir))
+  system(paste0("mkdir -p ", out_dir))
   
   fusion_dir <- paste0(result_dir, "fusions/", samplename, "/")
   bam_path <- paste0(result_dir, "BWA_and_picard/bams/")
@@ -138,59 +139,47 @@ rmarkdown::render(
   
   # load in fusions:
   fusions <- readRDS(paste0(fusion_dir, "EWSR1_GOI_fusions.Rdata"))
-  fusions <- list(
-    high_conf = fusions$high_conf_bp$true_positives$fusions$FLI1,
-    low_conf = fusions$low_conf_bp$true_positives$fusions$FLI1
-  )
-  
+
+  fusions <- fusions$high_conf$true_positives$fusions$FLI1
+
   # make chr22 coord main fusion coord:
-  fusions <- lapply(fusions, function(x) {
-    return(
-      GRanges(
-        seqnames = x$join_chr,
-        ranges = IRanges(start = x$join_coord, end = x$join_coord),
-        strand = "*",
-        join_chr = seqnames(x),
-        join_coord = start(x)
-      )
-    )
-  })
-  
+  fusions <- GRanges(
+    seqnames = fusions$join_chr,
+    ranges = IRanges(start = fusions$join_coord, end = fusions$join_coord),
+    strand = "*",
+    join_chr = seqnames(fusions),
+    join_coord = start(fusions)
+  )
+    
   # combine fusions with <= same_fusion_window bp difference in coord:
-  fusions <- lapply(fusions, function(x) {
+  fusions$remove <- FALSE
+  
+  for (i in 1:length(fusions)) {
     
-    x$remove <- FALSE
-    
-    for (i in 1:length(x)) {
+    if (!(fusions$remove[i])) {
       
-      if (!(x$remove[i])) {
+      chr22_window <- (start(fusions[i])-same_fusion_window):(start(fusions[i])+same_fusion_window)
+      chr11_window <- (fusions[i]$join_coord-same_fusion_window):(fusions[i]$join_coord+same_fusion_window)
+      
+      # check each other fusion to see whether both chr11 and 22 coord is close
+      # enough to those of another fusion to justify removing one of them:
+      for (j in 1:length(fusions)) {
         
-        chr22_window <- (start(x[i])-same_fusion_window):(start(x[i])+same_fusion_window)
-        chr11_window <- (x[i]$join_coord-same_fusion_window):(x[i]$join_coord+same_fusion_window)
-        
-        # check each other fusion to see whether both chr11 and 22 coord is close
-        # enough to those of another fusion to justify removing one of them:
-        for (j in 1:length(x)) {
-          
-          if (j!=i & start(x)[j] %in% chr22_window & 
-              x$join_coord[j] %in% chr11_window) {
-            x$remove[j] <- TRUE
-          }
-          
+        if (j!=i & start(fusions)[j] %in% chr22_window & 
+            fusions$join_coord[j] %in% chr11_window) {
+          fusions$remove[j] <- TRUE
         }
         
       }
       
     }
-      
-    # remove those marked as the same as another fusion:
-    res <- x[!(x$remove)]
-    mcols(res) <- subset(res, select = -remove)
     
-    return(res)
-    
-  })
-
+  }
+          
+  # remove those marked as the same as another fusion:
+  fusions <- fusions[!(fusions$remove)]
+  mcols(fusions) <- subset(fusions, select = -remove)
+  
 ```
 
 ```{r, load_bams, include = FALSE}
@@ -531,12 +520,13 @@ rmarkdown::render(
   p <- p + geom_bar(stat="identity", position = "dodge")
   p <- p + scale_y_continuous(trans='log10')
   p <- p + scale_fill_manual(values=plot_cols)
-  p <- p + ylab("No. reads (log10)")
   p <- p + theme_cowplot(12)
   p <- p + theme(
     axis.text.x = element_text(angle = 45, hjust = 1),
     axis.title.x=element_blank()
   )
+  read_filtration_barplot <- p
+  log10_read_filtration_barplot <- p + ylab("No. reads (log10)")
 
 
 ```{r, find_overlapping_reads, include = FALSE}
@@ -546,224 +536,40 @@ rmarkdown::render(
   ####################################################################################
 
   if (!file.exists(paste0(Robject_dir, "high_conf_overlapping_reads.Rdata"))) {
-    
-    fusions <- fusions$high_conf
+
+    if (!is.na(fusions)) {
+
+      # create empty list to be filled:
+      temp_list <- list(
+        spanning = NULL,
+        overlapping = NULL
+      )
       
-    # create empty list to be filled:
-    temp_list <- list(
-      spanning = NULL,
-      overlapping = NULL
-    )
-    
-    for (i in 1:length(fusions)) {
-      if (i==1) {
-        all_reads <- list(
-          list(
+      for (i in 1:length(fusions)) {
+        if (i==1) {
+          all_reads <- list(
+            list(
+              non_supporting = temp_list,
+              supporting = temp_list
+            )
+          )
+        } else {
+          all_reads[[i]] <- list(
             non_supporting = temp_list,
             supporting = temp_list
           )
-        )
-      } else {
-        all_reads[[i]] <- list(
-          non_supporting = temp_list,
-          supporting = temp_list
-        )
+        }
       }
-    }
-    names(all_reads) <- start(fusions)
-    
-    # find overlaps of non-split concordant pairs with chr22 breakpoint coords, 
-    # add to non_supporting$overlapping:
-    
-    # split concordant reads by qname:
-    spl <- split(
-      final_bam$non_split_concordant_pairs, 
-      final_bam$non_split_concordant_pairs$qname
-    )
-    
-    # initiate cluster:
-    cl <- makeCluster(7)
-    clusterExport(
-      cl, varlist = c("spl")
-    )
-    
-    for (i in 1:length(fusions)) {
+      names(all_reads) <- start(fusions)
       
-      # find overlaps with fusion breakpoints:
-      overlapping_reads <- parLapply(
-        cl,
-        spl,
-        find_overlapping_reads,
-        fusion = fusions[i],
-        chromosome = "chr22"
+      # find overlaps of non-split concordant pairs with chr22 breakpoint coords, 
+      # add to non_supporting$overlapping:
+      
+      # split concordant reads by qname:
+      spl <- split(
+        final_bam$non_split_concordant_pairs, 
+        final_bam$non_split_concordant_pairs$qname
       )
-      
-      overlapping_reads <- unlist(
-        as(
-          overlapping_reads[
-            sapply(overlapping_reads, function(x) !is.null(x))
-          ],
-          "GRangesList"
-        )
-      )
-      names(overlapping_reads) <- NULL
-      
-      if (!is.null(overlapping_reads)) {
-        all_reads[[i]]$non_supporting$overlapping <- overlapping_reads
-      } else {
-        all_reads[[i]]$non_supporting$overlapping <- GRanges(NULL)
-      }
-
-    }
-    
-    stopCluster(cl)
-    
-    # find overlaps of split primary reads with chr22 breakpoint coords, 
-    # add to supporting_$overlapping:
-    spl <- split(final_bam$split_pairs, final_bam$split_pairs$qname)
-    
-    # initiate cluster:
-    cl <- makeCluster(7)
-    clusterExport(
-      cl, varlist = c("spl")
-    )
-    
-    for (i in 1:length(fusions)) {
-      
-      # find overlaps with fusion breakpoints:
-      overlapping_reads <- parLapply(
-        cl,
-        spl,
-        find_overlapping_reads,
-        fusion = fusions[i],
-        chromosome = "chr22"
-      )
-      
-      overlapping_reads <- unlist(
-        as(
-          overlapping_reads[
-            sapply(overlapping_reads, function(x) !is.null(x))
-          ],
-          "GRangesList"
-        )
-      )
-      names(overlapping_reads) <- NULL
-      
-      if (!is.null(overlapping_reads)) {
-        all_reads[[i]]$supporting$overlapping <- overlapping_reads
-      } else {
-        all_reads[[i]]$supporting$overlapping <- GRanges(NULL)
-      }
-      
-    }
-    
-    # find overlaps of split primary reads with chr11 breakpoint coords, 
-    # add to supporting_reads$overlapping:
-    
-    # find overlaps with fusion breakpoint:
-    overlapping_reads <- parLapply(
-      cl,
-      spl,
-      find_overlapping_reads,
-      fusion = fusions[i],
-      chromosome = "chr11"
-    )
-    
-    stopCluster(cl)
-    
-    all_reads[[i]]$supporting$overlapping <- c(
-      all_reads[[i]]$supporting$overlapping,
-      unlist(
-        as(
-          overlapping_reads[
-            sapply(overlapping_reads, function(x) !is.null(x))
-          ],
-          "GRangesList"
-        )
-      )
-    )
-    names(all_reads[[i]]$supporting$overlapping) <- NULL
-    
-    # filter reads:
-    all_reads <- lapply(all_reads, function(x) {
-      
-      return(
-        lapply(x, function(y) {
-          
-          # deduplicate reads:
-          spl <- split(y$overlapping, y$overlapping$qname)
-          spl <- spl[!duplicated(spl)]
-          
-          y$overlapping <- unlist(
-            as(
-              spl[sapply(spl, function(z) !is.null(z))],
-              "GRangesList"
-            )
-          )
-          names(y$overlapping) <- NULL
-          
-          # filter overlapping reads without at least min_overlap on both sides of fusion:
-          y$overlapping <- filter_overlaps(
-            reads = y$overlapping, 
-            min_overlap = min_overlap
-          )
-          
-          return(y)
-          
-        })
-      )
-      
-    })
-
-    saveRDS(all_reads, paste0(Robject_dir, "high_conf_overlapping_reads.Rdata"))
-
-  } else {
-    all_reads <- readRDS(paste0(Robject_dir, "high_conf_overlapping_reads.Rdata"))
-  }
-
-  
-
-```{r, find_spanning_reads, include = FALSE}
-
-  if (!file.exists(paste0(Robject_dir, "high_conf_fusion_reads.Rdata"))) {
-
-    ####################################################################################
-    ### 3. Find breakpoint-spanning reads ###
-    ####################################################################################
-    
-    # find breakpoint-spanning reads from non-split non-discordant reads, 
-    # add to spanning$non_supporting:
-    
-    # fetch read gaps (read + gap coords):
-    # split by qname:
-    spl <- split(
-      final_bam$non_split_concordant_pairs, 
-      final_bam$non_split_concordant_pairs$qname
-    )
-    
-    # initiate cluster:
-    cl <- makeCluster(7)
-    clusterExport(
-      cl, varlist = c("spl")
-    )
-    
-    # fetch read gaps:
-    non_split_concordant_gaps <- parLapply(
-      cl, spl, fetch_mate_gap
-    )
-    
-    stopCluster(cl)
-    
-    # merge into granges:
-    non_split_concordant_gaps <- unlist(
-      as(non_split_concordant_gaps, "GRangesList")
-    )
-    names(non_split_concordant_gaps) <- NULL
-    
-    # split by qname:
-    spl <- split(non_split_concordant_gaps, non_split_concordant_gaps$qname)
-    
-    if (length(spl) > 0) {
       
       # initiate cluster:
       cl <- makeCluster(7)
@@ -773,85 +579,284 @@ rmarkdown::render(
       
       for (i in 1:length(fusions)) {
         
-        # find overlaps of non-supporting gaps with fusions:
-        spanning_gaps <- parLapply(
-          cl, 
-          spl, 
-          find_overlapping_reads, 
-          fusions = fusions[i],
+        # find overlaps with fusion breakpoints:
+        overlapping_reads <- parLapply(
+          cl,
+          spl,
+          find_overlapping_reads,
+          fusion = fusions[i],
           chromosome = "chr22"
         )
         
-        # merge ranges:
-        spanning_gaps <- unlist(
+        overlapping_reads <- unlist(
           as(
-            spanning_gaps[
-              sapply(spanning_gaps, function(x) !is.null(x))
+            overlapping_reads[
+              sapply(overlapping_reads, function(x) !is.null(x))
             ],
             "GRangesList"
           )
         )
-        names(spanning_gaps) <- NULL
+        names(overlapping_reads) <- NULL
         
-        stopCluster(cl)
-        
-        if (!is.null(spanning_gaps)) {
-          
-          # fetch corresponding read pairs:
-          all_reads[[i]]$non_supporting$spanning <- final_bam$non_split_concordant_pairs[
-            final_bam$non_split_concordant_pairs$qname %in% 
-              spanning_gaps$qname
-          ]
-          m <- match(
-            all_reads[[i]]$non_supporting$spanning$qname, spanning_gaps$qname
-          )
-          all_reads[[i]]$non_supporting$spanning$fusion_coord <- 
-            spanning_gaps$fusion_coord[m]
-          
+        if (!is.null(overlapping_reads)) {
+          all_reads[[i]]$non_supporting$overlapping <- overlapping_reads
         } else {
+          all_reads[[i]]$non_supporting$overlapping <- GRanges(NULL)
+        }
+
+      }
+      
+      stopCluster(cl)
+      
+      # find overlaps of split primary reads with chr22 breakpoint coords, 
+      # add to supporting_$overlapping:
+      spl <- split(final_bam$split_pairs, final_bam$split_pairs$qname)
+      
+      # initiate cluster:
+      cl <- makeCluster(7)
+      clusterExport(
+        cl, varlist = c("spl")
+      )
+      
+      for (i in 1:length(fusions)) {
+        
+        # find overlaps with fusion breakpoints:
+        overlapping_reads <- parLapply(
+          cl,
+          spl,
+          find_overlapping_reads,
+          fusion = fusions[i],
+          chromosome = "chr22"
+        )
+        
+        overlapping_reads <- unlist(
+          as(
+            overlapping_reads[
+              sapply(overlapping_reads, function(x) !is.null(x))
+            ],
+            "GRangesList"
+          )
+        )
+        names(overlapping_reads) <- NULL
+        
+        if (!is.null(overlapping_reads)) {
+          all_reads[[i]]$supporting$overlapping <- overlapping_reads
+        } else {
+          all_reads[[i]]$supporting$overlapping <- GRanges(NULL)
+        }
+        
+        # find overlaps of split primary reads with chr11 breakpoint coords, 
+        # add to supporting_reads$overlapping:
+        
+        # find overlaps with fusion breakpoint:
+        overlapping_reads <- parLapply(
+          cl,
+          spl,
+          find_overlapping_reads,
+          fusion = fusions[i],
+          chromosome = "chr11"
+        )
+        
+        if (!is.null(overlapping_reads)) {
+
+          all_reads[[i]]$supporting$overlapping <- c(
+            all_reads[[i]]$supporting$overlapping,
+            unlist(
+              as(
+                overlapping_reads[
+                  sapply(overlapping_reads, function(x) !is.null(x))
+                ],
+                "GRangesList"
+              )
+            )
+          )
+          names(all_reads[[i]]$supporting$overlapping) <- NULL
+
+        }
+
+      }
+
+      stopCluster(cl)
+
+      all_reads <- lapply(all_reads, function(x) {
+        
+        return(
+          lapply(x, function(y) {
+            
+            # deduplicate reads:
+            spl <- split(y$overlapping, y$overlapping$qname)
+            spl <- spl[!duplicated(spl)]
+            
+            y$overlapping <- unlist(
+              as(
+                spl[sapply(spl, function(z) !is.null(z))],
+                "GRangesList"
+              )
+            )
+            names(y$overlapping) <- NULL
+            
+            # filter overlapping reads without at least min_overlap on both sides of fusion:
+            y$overlapping <- filter_overlaps(
+              reads = y$overlapping, 
+              min_overlap = min_overlap
+            )
+            
+            return(y)
+            
+          })
+        )
+        
+      })
+
+    } else {
+      all_reads <- NA
+    }
+
+    saveRDS(all_reads, paste0(Robject_dir, "high_conf_overlapping_reads.Rdata"))
+
+  } else {
+    all_reads <- readRDS(paste0(Robject_dir, "high_conf_overlapping_reads.Rdata"))
+  }
+
+```
+
+```{r, find_spanning_reads, include = FALSE}
+
+  if (!file.exists(paste0(Robject_dir, "high_conf_fusion_reads.Rdata"))) {
+
+    if (!is.na(all_reads)) {
+
+      ####################################################################################
+      ### 3. Find breakpoint-spanning reads ###
+      ####################################################################################
+      
+      if (is.list(fusions)) {
+        fusions <- fusions$high_conf
+      }
+
+      # find breakpoint-spanning reads from non-split non-discordant reads, 
+      # add to spanning$non_supporting:
+      
+      # fetch read gaps (read + gap coords):
+      # split by qname:
+      spl <- split(
+        final_bam$non_split_concordant_pairs, 
+        final_bam$non_split_concordant_pairs$qname
+      )
+      
+      # initiate cluster:
+      cl <- makeCluster(7)
+      clusterExport(
+        cl, varlist = c("spl")
+      )
+      
+      # fetch read gaps:
+      non_split_concordant_gaps <- parLapply(
+        cl, spl, fetch_mate_gap
+      )
+      
+      stopCluster(cl)
+      
+      # merge into granges:
+      non_split_concordant_gaps <- unlist(
+        as(non_split_concordant_gaps, "GRangesList")
+      )
+      names(non_split_concordant_gaps) <- NULL
+      
+      # split by qname:
+      spl <- split(non_split_concordant_gaps, non_split_concordant_gaps$qname)
+      
+      if (length(spl) > 0) {
+        
+        # initiate cluster:
+        cl <- makeCluster(7)
+        clusterExport(
+          cl, varlist = c("spl")
+        )
+        
+        for (i in 1:length(fusions)) {
+          
+          # find overlaps of non-supporting gaps with fusions:
+          spanning_gaps <- parLapply(
+            cl, 
+            spl, 
+            find_overlapping_reads, 
+            fusions = fusions[i],
+            chromosome = "chr22"
+          )
+          
+          # merge ranges:
+          spanning_gaps <- unlist(
+            as(
+              spanning_gaps[
+                sapply(spanning_gaps, function(x) !is.null(x))
+              ],
+              "GRangesList"
+            )
+          )
+          names(spanning_gaps) <- NULL
+          
+          stopCluster(cl)
+          
+          if (!is.null(spanning_gaps)) {
+            
+            # fetch corresponding read pairs:
+            all_reads[[i]]$non_supporting$spanning <- final_bam$non_split_concordant_pairs[
+              final_bam$non_split_concordant_pairs$qname %in% 
+                spanning_gaps$qname
+            ]
+            m <- match(
+              all_reads[[i]]$non_supporting$spanning$qname, spanning_gaps$qname
+            )
+            all_reads[[i]]$non_supporting$spanning$fusion_coord <- 
+              spanning_gaps$fusion_coord[m]
+            
+          } else {
+            all_reads[[i]]$non_supporting$spanning <- GRanges(NULL)
+          }
+          
+        }
+        
+      } else {
+        for (i in 1:length(fusions)) {
           all_reads[[i]]$non_supporting$spanning <- GRanges(NULL)
+        }
+      }
+      
+      # find breakpoint-spanning reads from discordant reads, 
+      # add to spanning$supporting:
+      spl <- split(
+        final_bam$discordant_pairs, 
+        final_bam$discordant_pairs$qname
+      )
+      
+      for (i in 1:length(fusions)) {
+        
+        spanning_reads <- lapply(
+          spl, 
+          find_spanning_discordant, 
+          fusions = fusions[i], 
+          exp_window = disc_read_window
+        )
+        
+        # merge to granges object:
+        spanning_reads <- unlist(
+          as(
+            spanning_reads[
+              sapply(spanning_reads, function(x) !is.null(x))
+            ], "GRangesList"
+          )
+        )
+        names(spanning_reads) <- NULL
+        
+        if (!is.null(spanning_reads)) {
+          all_reads[[i]]$supporting$spanning <- spanning_reads
+        } else {
+          all_reads[[i]]$supporting$spanning <- GRanges(NULL)
         }
         
       }
-      
-    } else {
-      for (i in 1:length(fusions)) {
-        all_reads[[i]]$non_supporting$spanning <- GRanges(NULL)
-      }
-    }
-    
-    # find breakpoint-spanning reads from discordant reads, 
-    # add to spanning$supporting:
-    spl <- split(
-      final_bam$discordant_pairs, 
-      final_bam$discordant_pairs$qname
-    )
-    
-    for (i in 1:length(fusions)) {
-      
-      spanning_reads <- lapply(
-        spl, 
-        find_spanning_discordant, 
-        fusions = fusions[i], 
-        exp_window = disc_read_window
-      )
-      
-      # merge to granges object:
-      spanning_reads <- unlist(
-        as(
-          spanning_reads[
-            sapply(spanning_reads, function(x) !is.null(x))
-          ], "GRangesList"
-        )
-      )
-      names(spanning_reads) <- NULL
-      
-      if (!is.null(overlapping_reads)) {
-        all_reads[[i]]$supporting$spanning <- spanning_reads
-      } else {
-        all_reads[[i]]$supporting$spanning <- GRanges(NULL)
-      }
-      
+
     }
 
     saveRDS(all_reads, paste0(Robject_dir, "high_conf_fusion_reads.Rdata"))
@@ -865,205 +870,220 @@ rmarkdown::render(
 ```
     
 
-```{r, calculate_VAFS, include = FALSE}
+```{r, calculate_VAFs, include = FALSE}
 
-  ####################################################################################
-  ### 4. Calculate proportions of non-supporting vs supporting read pairs for each
-  # sample ###
-  ####################################################################################
+  if (!is.na(all_reads)) {
 
-  # combine all supporting reads, and all non-supporting reads, for each fusion:
-  combined_reads <- lapply(all_reads, function(x) {
-    return(
-      lapply(x, function(y) {
-        return(c(y$spanning, y$overlapping))
-      })
-    )
-  })
+    ####################################################################################
+    ### 4. Calculate proportions of non-supporting vs supporting read pairs for each
+    # sample ###
+    ####################################################################################
 
-  # check all reads are in pairs:
-  pair_check <- lapply(combined_reads, function(x) {
-    sapply(x, function(y) {
-      spl <- split(y, y$qname)
+    # combine all supporting reads, and all non-supporting reads, for each fusion:
+    combined_reads <- lapply(all_reads, function(x) {
       return(
-        all(
-          sapply(spl, function(z) {
-            length(z) == 2
-          })
-        )
+        lapply(x, function(y) {
+          return(c(y$spanning, y$overlapping))
+        })
       )
     })
-  })
-    
-  print(
-    paste0(
-      "Are all supporting reads in pairs? ", 
-      all(sapply(pair_check, function(x) x[names(x) == "supporting"]))
-    )
-  )
 
-  print(
-    paste0(
-      "Are all non-supporting reads in pairs? ", 
-      all(sapply(pair_check, function(x) x[names(x) == "non_supporting"]))
+    # check all reads are in pairs:
+    pair_check <- lapply(combined_reads, function(x) {
+      sapply(x, function(y) {
+        spl <- split(y, y$qname)
+        return(
+          all(
+            sapply(spl, function(z) {
+              length(z) == 2
+            })
+          )
+        )
+      })
+    })
+      
+    print(
+      paste0(
+        "Are all supporting reads in pairs? ", 
+        all(sapply(pair_check, function(x) x[names(x) == "supporting"]))
+      )
     )
-  )
 
-  # save each group as sam file:
-  for (i in 1:length(all_reads)) {
-    for (j in 1:length(all_reads[[i]])) {
-      for (k in 1:length(all_reads[[i]][[j]])) {
-        
-        if (length(all_reads[[i]][[j]][[k]]) > 0) {
+    print(
+      paste0(
+        "Are all non-supporting reads in pairs? ", 
+        all(sapply(pair_check, function(x) x[names(x) == "non_supporting"]))
+      )
+    )
+
+    # save each group as sam file:
+    for (i in 1:length(all_reads)) {
+      for (j in 1:length(all_reads[[i]])) {
+        for (k in 1:length(all_reads[[i]][[j]])) {
           
-          # define sam cols:
-          sam <- data.frame(
-            qname = all_reads[[i]][[j]][[k]]$qname,
-            flag = all_reads[[i]][[j]][[k]]$flag,
-            rname = seqnames(all_reads[[i]][[j]][[k]]),
-            pos = start(all_reads[[i]][[j]][[k]]),
-            mapq = all_reads[[i]][[j]][[k]]$mapq,
-            cigar = all_reads[[i]][[j]][[k]]$cigar,
-            rnext = all_reads[[i]][[j]][[k]]$rnext,
-            pnext = all_reads[[i]][[j]][[k]]$pnext,
-            tlen = all_reads[[i]][[j]][[k]]$tlen,
-            seq = all_reads[[i]][[j]][[k]]$seq,
-            qual = all_reads[[i]][[j]][[k]]$qual
-          )
-          
-          # write sam to tab-separated file:
-          write.table(
-            sam,
-            paste0(
-              fusion_dir, "fusion_coord_", names(all_reads)[i], "_", 
-              names(all_reads[[i]])[j],"_", names(all_reads[[i]][[j]])[k], 
-              "_reads_temp.sam"
-            ),
-            sep = "\t",
-            quote = FALSE,
-            row.names = FALSE,
-            col.names = FALSE
-          )
-          
-          # add header:
-          system(
-            paste0(
-              "samtools view -H ", 
-              bam_path, samplename, "/", samplename, ".", bamtypes[[1]],
-              " > ",
-              fusion_dir, "fusion_coord_", names(all_reads)[i], "_", 
-              names(all_reads[[i]])[j],"_", names(all_reads[[i]][[j]])[k], 
-              "_reads.sam"
+          if (length(all_reads[[i]][[j]][[k]]) > 0) {
+            
+            # define sam cols:
+            sam <- data.frame(
+              qname = all_reads[[i]][[j]][[k]]$qname,
+              flag = all_reads[[i]][[j]][[k]]$flag,
+              rname = seqnames(all_reads[[i]][[j]][[k]]),
+              pos = start(all_reads[[i]][[j]][[k]]),
+              mapq = all_reads[[i]][[j]][[k]]$mapq,
+              cigar = all_reads[[i]][[j]][[k]]$cigar,
+              rnext = all_reads[[i]][[j]][[k]]$rnext,
+              pnext = all_reads[[i]][[j]][[k]]$pnext,
+              tlen = all_reads[[i]][[j]][[k]]$tlen,
+              seq = all_reads[[i]][[j]][[k]]$seq,
+              qual = all_reads[[i]][[j]][[k]]$qual
             )
-          )
-          
-          # add rest of sam:
-          system(
-            paste0(
-              "cat ", 
-              fusion_dir, "fusion_coord_", names(all_reads)[i], "_", 
-              names(all_reads[[i]])[j],"_", names(all_reads[[i]][[j]])[k], 
-              "_reads_temp.sam", 
-              " >> ",
-              fusion_dir, "fusion_coord_", names(all_reads)[i], "_", 
-              names(all_reads[[i]])[j],"_", names(all_reads[[i]][[j]])[k], 
-              "_reads.sam"
+            
+            # write sam to tab-separated file:
+            write.table(
+              sam,
+              paste0(
+                fusion_dir, "fusion_coord_", names(all_reads)[i], "_", 
+                names(all_reads[[i]])[j],"_", names(all_reads[[i]][[j]])[k], 
+                "_reads_temp.sam"
+              ),
+              sep = "\t",
+              quote = FALSE,
+              row.names = FALSE,
+              col.names = FALSE
             )
-          )
-          
-          # convert to bam:
-          system(
-            paste0(
-              "samtools view -bh ", 
-              fusion_dir, "fusion_coord_", names(all_reads)[i], "_", 
-              names(all_reads[[i]])[j],"_", names(all_reads[[i]][[j]])[k], 
-              "_reads.sam",
-              " > ",
-              fusion_dir, "fusion_coord_", names(all_reads)[i], "_", 
-              names(all_reads[[i]])[j],"_", names(all_reads[[i]][[j]])[k], 
-              "_reads.bam"
+            
+            # add header:
+            system(
+              paste0(
+                "samtools view -H ", 
+                bam_path, samplename, "/", samplename, ".", bamtypes[[1]],
+                " > ",
+                fusion_dir, "fusion_coord_", names(all_reads)[i], "_", 
+                names(all_reads[[i]])[j],"_", names(all_reads[[i]][[j]])[k], 
+                "_reads.sam"
+              )
             )
-          )
-          
-          # sort:
-          system(
-            paste0(
-              "samtools sort -o ",
-              fusion_dir, "fusion_coord_", names(all_reads)[i], "_", 
-              names(all_reads[[i]])[j],"_", names(all_reads[[i]][[j]])[k], 
-              "_reads.sorted.bam ",
-              fusion_dir, "fusion_coord_", names(all_reads)[i], "_", 
-              names(all_reads[[i]])[j],"_", names(all_reads[[i]][[j]])[k], 
-              "_reads.bam"
+            
+            # add rest of sam:
+            system(
+              paste0(
+                "cat ", 
+                fusion_dir, "fusion_coord_", names(all_reads)[i], "_", 
+                names(all_reads[[i]])[j],"_", names(all_reads[[i]][[j]])[k], 
+                "_reads_temp.sam", 
+                " >> ",
+                fusion_dir, "fusion_coord_", names(all_reads)[i], "_", 
+                names(all_reads[[i]])[j],"_", names(all_reads[[i]][[j]])[k], 
+                "_reads.sam"
+              )
             )
-          )
-          
-          # index:
-          system(
-            paste0(
-              "samtools index ",
-              fusion_dir, "fusion_coord_", names(all_reads)[i], "_", 
-              names(all_reads[[i]])[j],"_", names(all_reads[[i]][[j]])[k], 
-              "_reads.sorted.bam"
+            
+            # convert to bam:
+            system(
+              paste0(
+                "samtools view -bh ", 
+                fusion_dir, "fusion_coord_", names(all_reads)[i], "_", 
+                names(all_reads[[i]])[j],"_", names(all_reads[[i]][[j]])[k], 
+                "_reads.sam",
+                " > ",
+                fusion_dir, "fusion_coord_", names(all_reads)[i], "_", 
+                names(all_reads[[i]])[j],"_", names(all_reads[[i]][[j]])[k], 
+                "_reads.bam"
+              )
             )
-          )
-          
-          # clean:
-          system(
-            paste0(
-              "rm ",
-              fusion_dir, "fusion_coord_", names(all_reads)[i], "_", 
-              names(all_reads[[i]])[j],"_", names(all_reads[[i]][[j]])[k], 
-              "_reads_temp.sam ",
-              fusion_dir, "fusion_coord_", names(all_reads)[i], "_", 
-              names(all_reads[[i]])[j],"_", names(all_reads[[i]][[j]])[k], 
-              "_reads.sam ",
-              fusion_dir, "fusion_coord_", names(all_reads)[i], "_", 
-              names(all_reads[[i]])[j],"_", names(all_reads[[i]][[j]])[k], 
-              "_reads.bam"
+            
+            # sort:
+            system(
+              paste0(
+                "samtools sort -o ",
+                fusion_dir, "fusion_coord_", names(all_reads)[i], "_", 
+                names(all_reads[[i]])[j],"_", names(all_reads[[i]][[j]])[k], 
+                "_reads.sorted.bam ",
+                fusion_dir, "fusion_coord_", names(all_reads)[i], "_", 
+                names(all_reads[[i]])[j],"_", names(all_reads[[i]][[j]])[k], 
+                "_reads.bam"
+              )
             )
-          )
+            
+            # index:
+            system(
+              paste0(
+                "samtools index ",
+                fusion_dir, "fusion_coord_", names(all_reads)[i], "_", 
+                names(all_reads[[i]])[j],"_", names(all_reads[[i]][[j]])[k], 
+                "_reads.sorted.bam"
+              )
+            )
+            
+            # clean:
+            system(
+              paste0(
+                "rm ",
+                fusion_dir, "fusion_coord_", names(all_reads)[i], "_", 
+                names(all_reads[[i]])[j],"_", names(all_reads[[i]][[j]])[k], 
+                "_reads_temp.sam ",
+                fusion_dir, "fusion_coord_", names(all_reads)[i], "_", 
+                names(all_reads[[i]])[j],"_", names(all_reads[[i]][[j]])[k], 
+                "_reads.sam ",
+                fusion_dir, "fusion_coord_", names(all_reads)[i], "_", 
+                names(all_reads[[i]])[j],"_", names(all_reads[[i]][[j]])[k], 
+                "_reads.bam"
+              )
+            )
+            
+          }
           
         }
-        
       }
     }
+
+    # keep breakpoints with greatest number of supporting reads:
+    read_counts <- sapply(combined_reads, function(x) {
+      return(
+        sapply(x, function(y) {
+          length(y)
+        })
+      )
+    })
+
+    final_reads <- all_reads[[which.max(read_counts["supporting",])]]
+    final_combined <- combined_reads[[which.max(read_counts["supporting",])]]
+
+    venn_reads <- list(
+      supporting_spanning = final_reads$supporting$spanning,
+      supporting_overlapping = final_reads$supporting$overlapping,
+      non_supporting_spanning = final_reads$non_supporting$spanning,
+      non_supporting_overlapping = final_reads$non_supporting$overlapping
+    )
+    final_venn <- create_venn(venn_reads, venn_cols)
+
+    # calculate supporting vs non-supporting proportion:
+    VAF <- round(
+      length(final_combined$supporting)/length(final_combined$non_supporting)*100,
+      1
+    )
+    VAF <- data.frame(VAF)
+    colnames(VAF) <- names(which.max(read_counts["supporting",]))
+
+    # save VAF:
+    write.table(
+      VAF,
+      paste0(
+        out_dir, "VAF.txt"
+      ),
+      quote = F,
+      row.names = F,
+      col.names = T
+    )
+
+  } else {
+
+    VAF <- NA
+    system(paste0("touch ", out_dir, "VAF.txt"))
+    final_venn <- NA
+
   }
 
-  # keep breakpoints with greatest number of supporting reads:
-  read_counts <- sapply(combined_reads, function(x) {
-    return(
-      sapply(x, function(y) {
-        length(y)
-      })
-    )
-  })
-
-  final_reads <- all_reads[[which.max(read_counts["supporting",])]]
-  final_combined <- combined_reads[[which.max(read_counts["supporting",])]]
-
-  venn_reads <- list(
-    supporting_spanning = final_reads$supporting$spanning,
-    supporting_overlapping = final_reads$supporting$overlapping,
-    non_supporting_spanning = final_reads$non_supporting$spanning,
-    non_supporting_overlapping = final_reads$non_supporting$overlapping
-  )
-  final_venn <- create_venn(venn_reads, venn_cols)
-
-  # calculate supporting vs non-supporting proportion:
-  VAF <- round(
-    length(final_combined$supporting)/length(final_combined$non_supporting)*100,
-    1
-  )
-
-  # save VAF:
-  write.table(
-    VAF,
-    paste0(table_dir, "fusion", names(final_reads), "_VAF.txt"),
-    quote = F,
-    row.names = F,
-    col.names = F
-  )
 
 ```
 
@@ -1150,7 +1170,7 @@ either side of the breakpoint \
 
 Fusion-associated reads: \
 
-```{r, echo = FALSE, message = FALSE, warning = FALSE}
+```{r, fig.align = "center", out.width = "8.5in", echo = FALSE, message = FALSE, warning = FALSE}
   final_venn
 ```
 

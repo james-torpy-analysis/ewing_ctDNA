@@ -2,7 +2,7 @@
 args = commandArgs(trailingOnly=TRUE)
 
 samplename <- args[1]
-#samplename <- "409_001_D9YW9_TCCTGAGC-CTCTCTAT_L001"
+#samplename <- "409_034_DCB94_CTCTCTAC-CTCTCTAT_L001"
 
 home_dir <- "/share/ScratchGeneral/jamtor/"
 #home_dir <- "/Users/torpor/clusterHome/"
@@ -98,7 +98,5 @@ if (!file.exists(paste0(Robject_dir, "EWSR1_GOI_fusions.Rdata"))) {
     paste0(Robject_dir, "EWSR1_GOI_fusions.Rdata")
   )
   
-} else {
-  fusion_results <- readRDS(paste0(Robject_dir, "EWSR1_GOI_fusions.Rdata"))
 }
 

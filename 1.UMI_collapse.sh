@@ -3,7 +3,7 @@
 source ~/.bashrc
 
 sample_name=$1
-sample_name="409_001_D9YW9_TCCTGAGC-CTCTCTAT_L001"
+#sample_name="409_001_D9YW9_TCCTGAGC-CTCTCTAT_L001"
 
 printf "\n\n"
 echo "sample name is $sample_name"

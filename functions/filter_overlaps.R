@@ -28,11 +28,11 @@ filter_overlaps <- function(reads, min_overlap) {
     # filter out reads without overlaps of at least min_overlap on both sides of
     # fusion (need at least 1/2 read to satisfy this condition):
     filt_split <- lapply(prefilt_split, function(x) {
-      condition_vec <- !(
+      remove_vec <- !(
         x$start_to_fusion >= min_overlap & x$fusion_to_end >= min_overlap
       )
-      condition_vec[is.na(condition_vec)] <- FALSE
-      if (any(condition_vec)) {
+      remove_vec[is.na(remove_vec)] <- FALSE
+      if (any(remove_vec)) {
         return(NULL)
       } else {
         return(x)

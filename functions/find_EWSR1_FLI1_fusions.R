@@ -20,10 +20,14 @@ find_EWSR1_FLI1_fusions <- function(
   
   # count ranges:
   print("Number of EWSR1 fusions:")
-  print(length(EWSR1_fusions))
+  if (is.na(EWSR1_fusions)) {
+    print(0)
+  } else {
+    print(length(EWSR1_fusions))
+  }
   
   # determine whether joining ranges overlap FLI1, ETV1 or ERG:
-  if (length(EWSR1_fusions) > 0) {
+  if (length(EWSR1_fusions) > 0 & !is.na(EWSR1_fusions)) {
 
     seqnams <- gsub(
       ":.*$", "", 
@@ -101,7 +105,6 @@ find_EWSR1_FLI1_fusions <- function(
     })
     return(x)
   })
-  
   
   return(all_fusions)
 
