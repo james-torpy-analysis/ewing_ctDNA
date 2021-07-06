@@ -98,8 +98,10 @@ VAF_plots <- lapply(plot_dfs, function(x) {
   
 })
 
+for (i in 1:length(VAF_plots)) {
+  png(paste0(in_path, "serial_dilution_", names(VAF_plots)[i], "_VAFs.png"))
+    print(VAF_plots[[i]])
+  dev.off()
+}
 
-png(paste0(in_path, "serial_dilution_1_VAFs.png"))
-  p
-dev.off()
 

@@ -2,7 +2,7 @@
 args = commandArgs(trailingOnly=TRUE)
 
 samplename <- args[1]
-#samplename <- "409_033_DCB94_TAGGCATG-CTCTCTAT_L001"
+#samplename <- "409_027_DCKVC_TAGGCATG-CTCTCTAT_L001"
 
 home_dir <- "/share/ScratchGeneral/jamtor/"
 #home_dir <- "/Users/torpor/clusterHome/"
@@ -29,12 +29,11 @@ library(ComplexHeatmap)
 
 load_breakpoints <- dget(paste0(func_dir, "load_breakpoints.R"))
 find_EWSR1_FLI1_fusions <- dget(paste0(func_dir, "find_EWSR1_FLI1_fusions.R"))
-create_summary_tables <- dget(paste0(func_dir, "create_summary_tables.R"))
 longitudinal_heatmap <- dget(
   paste0(func_dir, "longitudinal_heatmap.R")
 )
 
-if (!file.exists(paste0(Robject_dir, "EWSR1_GOI_fusions.Rdata"))) {
+#if (!file.exists(paste0(Robject_dir, "EWSR1_GOI_fusions.Rdata"))) {
   
   # define GOI co-ordinates:
   GOI <- list(
@@ -97,5 +96,5 @@ if (!file.exists(paste0(Robject_dir, "EWSR1_GOI_fusions.Rdata"))) {
     paste0(Robject_dir, "EWSR1_GOI_fusions.Rdata")
   )
   
-}
+#}
 

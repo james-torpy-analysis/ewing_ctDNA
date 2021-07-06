@@ -1,9 +1,8 @@
 longitudinal_heatmap <- function(
   fusion_df, 
   hm_title, 
-  type,
-  annotation = "false positives",
-  hm_cols
+  type, 
+  hm_cols,
 ) {
   
   library(tibble)
@@ -45,35 +44,14 @@ longitudinal_heatmap <- function(
       temp_sub <- subset(
         x, 
         select = c(
-          Treatment, Known_EWSR1_FLI1_fusion, Stringent_true_positives, 
-          Less_stringent_true_positives, Stringent_false_positives,
-          Less_stringent_false_positives, VAF
+          Treatment, Detected_FLI1_EWSR1_fusion, 
+          Known_EWSR1_FLI1_fusion, False_EWSR1_fusions
         )
       )
         
-      # change non-NA counts to 'yes' for true positives:
-      temp_sub$Stringent_true_positives[
-        !is.na(temp_sub$Stringent_true_positives)
-      ] <- "stringent_yes"
-      temp_sub$Less_stringent_true_positives[
-        !is.na(temp_sub$Less_stringent_true_positives)
-      ] <- "less_stringent_yes"
-      
-      # change NA counts to 'no' for true positives:
-      temp_sub$Stringent_true_positives[
-        is.na(temp_sub$Stringent_true_positives)
-      ] <- "stringent_no"
-      temp_sub$Less_stringent_true_positives[
-        is.na(temp_sub$Less_stringent_true_positives)
-      ] <- "less_stringent_no"
-      
-      # change NA counts to 0 for false positives:
-      temp_sub$Stringent_false_positives[
-        is.na(temp_sub$Stringent_false_positives)
-      ] <- 0
-      temp_sub$Less_stringent_false_positives[
-        is.na(temp_sub$Less_stringent_false_positives)
-      ] <- 0
+      # change counts > 0 to 'yes' and ==0 to 'no':
+      temp_sub[!is.na(temp_sub)] <- "yes"
+      temp_sub[is.na(temp_sub)] <- "no"
       
       merged_df <- merge(
         empty_df,
@@ -95,25 +73,25 @@ longitudinal_heatmap <- function(
         select = c(
           Dilution, Known_EWSR1_FLI1_fusion, Stringent_true_positives, 
           Less_stringent_true_positives, Stringent_false_positives,
-          Less_stringent_false_positives, VAF
+          Less_stringent_false_positives
         )
       )
       
       # change non-NA counts to 'yes' for true positives:
       temp_sub$Stringent_true_positives[
         !is.na(temp_sub$Stringent_true_positives)
-      ] <- "stringent_yes"
+      ] <- "yes"
       temp_sub$Less_stringent_true_positives[
         !is.na(temp_sub$Less_stringent_true_positives)
-      ] <- "less_stringent_yes"
+      ] <- "yes"
       
       # change NA counts to 'no' for true positives:
       temp_sub$Stringent_true_positives[
         is.na(temp_sub$Stringent_true_positives)
-      ] <- "stringent_no"
+      ] <- "no"
       temp_sub$Less_stringent_true_positives[
         is.na(temp_sub$Less_stringent_true_positives)
-      ] <- "less_stringent_no"
+      ] <- "no"
       
       # change NA counts to 0 for false positives:
       temp_sub$Stringent_false_positives[
@@ -162,13 +140,21 @@ longitudinal_heatmap <- function(
       detection_df
     )
     
+    # label stringent calls:
+    detection_df$Stringent_true_positives[
+      detection_df$Stringent_true_positives == "yes"
+    ] <- "stringent_yes"
+    
     # for those samples with no stringent calls, fetch non-stringent calls:
     temp_df <- detection_df[apply(detection_df, 1, function(x) any(!is.na(x))),]
     temp_df$Stringent_true_positives[
-      temp_df$Stringent_true_positives == "stringent_no"
-    ] <- temp_df$Less_stringent_true_positives[
-        temp_df$Stringent_true_positives == "stringent_no"
+      temp_df$Stringent_true_positives == "no"
+    ] <- paste0(
+      "less_stringent_", 
+      temp_df$Less_stringent_true_positives[
+        temp_df$Stringent_true_positives == "no"
       ]
+    )
     
     # merge with missing samples:
     detection_df <- rbind(
@@ -182,64 +168,42 @@ longitudinal_heatmap <- function(
     )
     colnames(detection_df) <- "Detections"
     
-    # create annotate df:
-    if (annotation == "false positives") {
-      
-      # create a false positive df in parallel:
-      annot_df <- subset(
-        merged_df, 
-        select = c(Stringent_false_positives, Less_stringent_false_positives)
-      )
-      temp_bind <- as.data.frame(
-        t(data.frame(rep(0, ncol(annot_df))))
-      )
-      colnames(temp_bind) <- colnames(annot_df)
-      rownames(temp_bind) <- "FISH"
-      annot_df <- rbind(
-        temp_bind,
-        annot_df
-      )
-      
-      # for samples with less stringent calls, update false positives column
-      # with less stringent false positives:
-      temp_df <- annot_df[apply(annot_df, 1, function(x) any(!is.na(x))),]
-      temp_df$Stringent_false_positives[
-        temp_df$Detections == "less_stringent_yes"
-      ] <- temp_df$Less_tringent_false_positives[
-        temp_df$Detections == "less_stringent_yes"
-      ]
-      
-      # merge with missing samples:
-      annot_df <- rbind(
-        temp_df,
-        annot_df[apply(annot_df, 1, function(x) all(is.na(x))),]
-      )
-      
-      # keep only detections column:
-      annot_df <- subset(
-        annot_df, select = "Stringent_false_positives"
-      )
-      colnames(annot_df) <- "False_positives"
-      
-    } else {
-      
-      # create a false positive df in parallel:
-      annot_df <- subset(
-        merged_df, 
-        select = VAF
-      )
-      temp_bind <- as.data.frame(
-        t(data.frame(rep(0, ncol(annot_df))))
-      )
-      colnames(temp_bind) <- colnames(annot_df)
-      rownames(temp_bind) <- "FISH"
-      annot_df <- rbind(
-        temp_bind,
-        annot_df
-      )
-      
-    }
-      
+    # create a false positive df in parallel:
+    annot_df <- subset(
+      merged_df, 
+      select = c(Stringent_false_positives, Less_stringent_false_positives)
+    )
+    temp_bind <- as.data.frame(
+      t(data.frame(rep(0, ncol(annot_df))))
+    )
+    colnames(temp_bind) <- colnames(annot_df)
+    rownames(temp_bind) <- "FISH"
+    annot_df <- rbind(
+      temp_bind,
+      annot_df
+    )
+    
+    # for samples with less stringent calls, update false positives column
+    # with less stringent false positives:
+    temp_df <- annot_df[apply(annot_df, 1, function(x) any(!is.na(x))),]
+    temp_df$Stringent_false_positives[
+      temp_df$Detections == "less_stringent_yes"
+    ] <- temp_df$Less_tringent_false_positives[
+      temp_df$Detections == "less_stringent_yes"
+    ]
+    
+    # merge with missing samples:
+    annot_df <- rbind(
+      temp_df,
+      annot_df[apply(annot_df, 1, function(x) all(is.na(x))),]
+    )
+    
+    # keep only detections column:
+    annot_df <- subset(
+      annot_df, select = "Stringent_false_positives"
+    )
+    colnames(annot_df) <- "False_positives"
+    
     return(list(detection_df = detection_df, annot_df = annot_df))
     
   })
@@ -309,14 +273,13 @@ longitudinal_heatmap <- function(
 
   # adjust order of annot dataframe:
   hm_dfs$annot_df$hm_df <- hm_dfs$annot_df$hm_df[
-    ,colnames(hm_dfs$detection_df$hm_df)
+    rownames(hm_dfs$detection_df$hm_df),
   ]
   
   # change all NA or 0 values in false positive df to spaces:
   final_annot <- apply(hm_dfs$annot_df$hm_df, 2, function(x) {
     x[is.na(x)] <- " "
     x[x == 0] <- " "
-    x[x == "unknown"] <- " "
     return(x)
   })
   
@@ -330,6 +293,7 @@ longitudinal_heatmap <- function(
       Heatmap(
         as.matrix(hm_dfs$detection_df$hm_df), 
         name = "Fusion detections", 
+        na_col = "grey",
         row_split = hm_dfs$detection_df$met_order,
         column_split = treatment_split,
         col = hm_cols,

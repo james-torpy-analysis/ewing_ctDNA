@@ -2,8 +2,10 @@
 args = commandArgs(trailingOnly=TRUE)
 
 samplename <- args[1]
-#samplename <- "409_040_DCKVC_GGACTCCT-CTCTCTAT_L001"
+#samplename <- "409_004_D9YWF_GTAGAGGA-CTCTCTAT_L001"
 venn_cols <- c("#7C1BE2", "#1B9E77", "#EFC000FF", "blue")
+chr22_roi <- c(29683079, 29686467) # region covered by primers
+chr11_roi <- c(128628010, 128683162) # region of exon 3 - exon 9
 
 #home_dir <- "/Users/torpor/clusterHome/"
 home_dir <- "/share/ScratchGeneral/jamtor/"
@@ -320,6 +322,44 @@ if (!file.exists(paste0(Robject_dir, "VAF_calculation_reads.Rdata"))) {
   
   # record read numbers:
   read_numbers$split_removed_from_discordant <- sapply(final_bam, length)
+  
+  # isolate reads within roi for supporting reads on those samples without 
+  # fusions called:
+  roi <- GRanges(
+    seqnames = c("chr11", "chr22"),
+    range = IRanges(
+      start = c(chr11_roi[1], chr22_roi[1]), 
+      end = c(chr11_roi[2], chr22_roi[2])
+    ),
+    strand = "*"
+  )
+  
+  # keep roi discordant reads:
+  # split by read name to keep pairs together:
+  spl <- split(final_bam$discordant_pairs, final_bam$discordant_pairs$qname)
+  
+  roi_discordant <- lapply(spl, function(x) {
+    
+    # return if chr11 read overlaps chr11 region and same for ch22:
+    olaps <- findOverlaps(x, roi)
+    olap_roi <- roi[subjectHits(olaps)]
+    
+    if (length(olap_roi) > 1) {
+      if (seqnames(olap_roi)[1] == "chr11" & olap_roi[2] == "chr22") {
+        return(x)
+      } else {
+        return(NULL)
+      }
+    } else {
+      return(NULL)
+    }
+    
+  })
+  
+  # remove NULLs:
+  roi_discordant <- roi_discordant[
+    sapply(roi_discordant, function(y) !is.null(y))
+  ]
 
   saveRDS(unfilt_bam, paste0(Robject_dir, "unfiltered_VAF_calculation_reads.Rdata"))
   saveRDS(final_bam, paste0(Robject_dir, "VAF_calculation_reads.Rdata"))

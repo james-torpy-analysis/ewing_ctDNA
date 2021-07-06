@@ -91,26 +91,17 @@ find_EWSR1_FLI1_fusions <- function(
    
   # clean up GOI_fusions:
   all_fusions <- lapply(all_fusions, function(x) {
-    x <- lapply(x, function(y) {
-      y[!(names(y) %in% "EWSR1")]
-      y <- lapply(y, function(z) z[!is.na(z)])
-      y <- y[lengths(y) != 0]
+    
+    # change fusion NA values to empty GRanges:
+    x$fusions[sapply(x$fusions, function(y) is.na(y)[1])] <- GRanges(NULL)
+    
+    # change fusion no NA values to 0:
+    x$fusion_nos[sapply(x$fusion_nos, function(y) is.na(y)[1])] <- 0
       
-      if (length(y) > 0) {
-        return(y)
-      } else {
-        return(NA)
-      }
-      
-    })
     return(x)
+
   })
   
   return(all_fusions)
 
 }
-
-
-
-
-
