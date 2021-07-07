@@ -8,6 +8,13 @@ func_dir <- paste0(project_dir, "scripts/functions/")
 fusion_dir <- paste0(project_dir, "results/fusions/")
 VAF_dir <- paste0(project_dir, "results/VAF_calculation/")
 
+detection_dir <- paste0(project_dir, "results/detection_heatmaps/")
+Robject_dir <- paste0(detection_dir, "/Rdata/")
+plot_dir <- paste0(VAF_dir, "plots/")
+
+system(paste0("mkdir -p ", Robject_dir))
+system(paste0("mkdir -p ", plot_dir))
+
 library(dplyr)
 
 
@@ -16,13 +23,15 @@ library(dplyr)
 ####################################################################################
 
 fetch_fusion_no <- dget(paste0(func_dir, "fetch_fusion_no.R"))
+longitudinal_heatmap <- dget(paste0(func_dir, "longitudinal_heatmap.R"))
 
 hm_cols <- c(
-  FISH_yes = "#75EA3D",
-  FISH_no = "#D68EB7",
-  stringent_yes = "#F7A006",
-  less_stringent_yes = "#F4D30B", 
-  no = "black",
+  FISH_detection = "#75EA3D",
+  no_FISH_detection = "#D68EB7",
+  stringent_detection = "#F7A006",
+  less_stringent_detection = "#F4D30B",
+  supporting_reads = "white",
+  no_supporting_reads = "black",
   unknown = "grey"
 )
 
@@ -143,23 +152,40 @@ fusion_dfs <- lapply(fusion_dfs, function(x) {
   return(x)
 })
 
-######
 
 # fetch fusion-supporting reads:
 fusion_read_nos <- sapply(samplenames, function(x) {
   
-  tryCatch(
-    read_no <- read.table(
-      paste0(VAF_dir, x, "/final_fusion_read_nos.txt"),
-      header = T,
-      stringsAsFactors = F
-    ),
-    error=function(err) NA
-  )
+  print(x)
   
+  return(
+    read.table(
+      paste0(VAF_dir, x, "/tables/non_specific_fusion_supporting_reads.txt"),
+      header = F
+    )
+  )
+})
+fusion_read_nos <- data.frame(
+  Sample = gsub(
+    "_.*$", "", 
+    sub(".*?_(.+)", "\\1", unlist(samplenames))
+  ),
+  Supporting_read_pairs = unlist(fusion_read_nos)
+)
+
+# add to fusion_dfs:
+fusion_dfs <- lapply(fusion_dfs, function(x) {
+  return(
+    merge(
+      x,
+      fusion_read_nos,
+      by = "Sample"
+    )
+  )
 })
 
-######
+save.image(paste0(Robject_dir, "temp_img.Rdata"))
+#load(paste0(Robject_dir, "temp_img.Rdata"))
 
 
 ####################################################################################
@@ -167,34 +193,94 @@ fusion_read_nos <- sapply(samplenames, function(x) {
 ####################################################################################
 
 patient_heatmap_FP <- longitudinal_heatmap(
-  fusion_dfs$patient,
+  fusion_df = fusion_dfs$patient,
   hm_title = "Patient EWSR1/FLI1 fusion detections",
   type = "patient",
   annotation = "false positives",
   hm_cols = hm_cols
 )
 
-patient_heatmap_VAF <- longitudinal_heatmap(
-  fusion_dfs$patient,
+png(
+  paste0(plot_dir, "patient_fusion_detection_heatmap_FP_annotated.png"),
+  width = 10,
+  height = 6,
+  unit = "in",
+  res = 300
+)
+  print(patient_heatmap_FP)
+dev.off()
+
+patient_heatmaps_VAF <- longitudinal_heatmap(
+  fusion_df = fusion_dfs$patient,
   hm_title = "Patient EWSR1/FLI1 fusion detections",
   type = "patient",
   annotation = "VAF",
   hm_cols = hm_cols
 )
+
+png(paste0(plot_dir, "patient_fusion_detection_heatmap_VAFs_annotated.png"),
+    width = 10,
+    height = 6,
+    unit = "in",
+    res = 300
+)
+  print(patient_heatmaps_VAF$VAF_annot)
+dev.off()
+
+png(
+  paste0(plot_dir, "patient_fusion_detection_heatmap_supporting_reads_annotated.png"),
+  width = 10,
+  height = 6,
+  unit = "in",
+  res = 300
+)
+  print(patient_heatmaps_VAF$sread_annot)
+dev.off()
 
 dilution_heatmap_FP <- longitudinal_heatmap(
-  fusion_dfs$dilution,
+  fusion_df = fusion_dfs$dilution,
   hm_title = "Cell line EWSR1/FLI1 fusion detections",
   type = "dilution",
   annotation = "false positives",
   hm_cols = hm_cols
 )
 
-dilution_heatmap_VAF <- longitudinal_heatmap(
-  fusion_dfs$dilution,
+png(
+  paste0(plot_dir, "cell_line_fusion_detection_heatmap_FP_annotated.png"),
+  width = 10,
+  height = 3,
+  unit = "in",
+  res = 300
+)
+  print(dilution_heatmap_FP)
+dev.off()
+
+dilution_heatmaps_VAF <- longitudinal_heatmap(
+  fusion_df = fusion_dfs$dilution,
   hm_title = "Cell line EWSR1/FLI1 fusion detections",
   type = "dilution",
   annotation = "VAF",
   hm_cols = hm_cols
 )
+
+png(
+  paste0(plot_dir, "cell_line_fusion_detection_heatmap_VAFs_annotated.png"),
+  width = 10,
+  height = 3,
+  unit = "in",
+  res = 300
+)
+  print(dilution_heatmaps_VAF$VAF_annot)
+dev.off()
+
+png(
+  paste0(plot_dir, "cell_line_fusion_detection_heatmap_supporting_reads_annotated.png"),
+  width = 10,
+  height = 3,
+  unit = "in",
+  res = 300
+)
+  print(dilution_heatmaps_VAF$sread_annot)
+dev.off()
+
 

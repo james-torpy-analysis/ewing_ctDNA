@@ -47,25 +47,39 @@ longitudinal_heatmap <- function(
         select = c(
           Treatment, Known_EWSR1_FLI1_fusion, Stringent_true_positives, 
           Less_stringent_true_positives, Stringent_false_positives,
-          Less_stringent_false_positives, VAF
+          Less_stringent_false_positives, VAF, Supporting_read_pairs
         )
       )
         
-      # change non-NA counts to 'yes' for true positives:
+      # change non-NA/non-zero counts to 'yes' for true positives or supporting 
+      # reads present:
       temp_sub$Stringent_true_positives[
-        !is.na(temp_sub$Stringent_true_positives)
+        !is.na(temp_sub$Stringent_true_positives) & 
+          as.numeric(temp_sub$Stringent_true_positives) > 0
       ] <- "stringent_yes"
       temp_sub$Less_stringent_true_positives[
-        !is.na(temp_sub$Less_stringent_true_positives)
+        !is.na(temp_sub$Less_stringent_true_positives) & 
+          as.numeric(temp_sub$Less_stringent_true_positives) > 0
       ] <- "less_stringent_yes"
+      temp_sub$Supporting_read_pairs[
+        !is.na(temp_sub$Supporting_read_pairs) & 
+          temp_sub$Supporting_read_pairs > 0
+      ] <- "supporting_reads_yes"
       
-      # change NA counts to 'no' for true positives:
+      
+      # change NA/non-zero counts to 'no' for true positives:
       temp_sub$Stringent_true_positives[
-        is.na(temp_sub$Stringent_true_positives)
+        is.na(temp_sub$Stringent_true_positives) | 
+          temp_sub$Stringent_true_positives == 0
       ] <- "stringent_no"
       temp_sub$Less_stringent_true_positives[
-        is.na(temp_sub$Less_stringent_true_positives)
+        is.na(temp_sub$Less_stringent_true_positives) | 
+          temp_sub$Less_stringent_true_positives == 0
       ] <- "less_stringent_no"
+      temp_sub$Supporting_read_pairs[
+        is.na(temp_sub$Supporting_read_pairs) | 
+          temp_sub$Supporting_read_pairs == 0
+      ] <- "supporting_reads_no"
       
       # change NA counts to 0 for false positives:
       temp_sub$Stringent_false_positives[
@@ -95,25 +109,39 @@ longitudinal_heatmap <- function(
         select = c(
           Dilution, Known_EWSR1_FLI1_fusion, Stringent_true_positives, 
           Less_stringent_true_positives, Stringent_false_positives,
-          Less_stringent_false_positives, VAF
+          Less_stringent_false_positives, VAF, Supporting_read_pairs
         )
       )
       
-      # change non-NA counts to 'yes' for true positives:
+      # change non-NA/non-zero counts to 'yes' for true positives or supporting 
+      # reads present:
       temp_sub$Stringent_true_positives[
-        !is.na(temp_sub$Stringent_true_positives)
+        !is.na(temp_sub$Stringent_true_positives) & 
+          as.numeric(temp_sub$Stringent_true_positives) > 0
       ] <- "stringent_yes"
       temp_sub$Less_stringent_true_positives[
-        !is.na(temp_sub$Less_stringent_true_positives)
+        !is.na(temp_sub$Less_stringent_true_positives) & 
+          as.numeric(temp_sub$Less_stringent_true_positives) > 0
       ] <- "less_stringent_yes"
+      temp_sub$Supporting_read_pairs[
+        !is.na(temp_sub$Supporting_read_pairs) & 
+          temp_sub$Supporting_read_pairs > 0
+      ] <- "supporting_reads_yes"
       
-      # change NA counts to 'no' for true positives:
+      
+      # change NA/non-zero counts to 'no' for true positives:
       temp_sub$Stringent_true_positives[
-        is.na(temp_sub$Stringent_true_positives)
+        is.na(temp_sub$Stringent_true_positives) | 
+          temp_sub$Stringent_true_positives == 0
       ] <- "stringent_no"
       temp_sub$Less_stringent_true_positives[
-        is.na(temp_sub$Less_stringent_true_positives)
+        is.na(temp_sub$Less_stringent_true_positives) | 
+          temp_sub$Less_stringent_true_positives == 0
       ] <- "less_stringent_no"
+      temp_sub$Supporting_read_pairs[
+        is.na(temp_sub$Supporting_read_pairs) | 
+          temp_sub$Supporting_read_pairs == 0
+      ] <- "supporting_reads_no"
       
       # change NA counts to 0 for false positives:
       temp_sub$Stringent_false_positives[
@@ -153,11 +181,12 @@ longitudinal_heatmap <- function(
     FISH <- paste0("FISH_", FISH)
     detection_df <- subset(
       merged_df, 
-      select = c(Stringent_true_positives, Less_stringent_true_positives)
+      select = c(Stringent_true_positives, Less_stringent_true_positives, Supporting_read_pairs)
     )
     detection_df <- rbind(
       data.frame(
-        row.names = "FISH", Stringent_true_positives = FISH, Less_stringent_true_positives = FISH
+        row.names = "FISH", Stringent_true_positives = FISH, Less_stringent_true_positives = FISH,
+        Supporting_read_pairs = FISH
       ),
       detection_df
     )
@@ -169,6 +198,13 @@ longitudinal_heatmap <- function(
     ] <- temp_df$Less_stringent_true_positives[
         temp_df$Stringent_true_positives == "stringent_no"
       ]
+    
+    # for those samples with no less stringent calls, fetch supporting read pair no:
+    temp_df$Stringent_true_positives[
+      temp_df$Stringent_true_positives == "less_stringent_no"
+    ] <- temp_df$Supporting_read_pairs[
+      temp_df$Stringent_true_positives == "less_stringent_no"
+    ]
     
     # merge with missing samples:
     detection_df <- rbind(
@@ -223,7 +259,7 @@ longitudinal_heatmap <- function(
       
     } else {
       
-      # create a false positive df in parallel:
+      # create a VAF df in parallel:
       annot_df <- subset(
         merged_df, 
         select = VAF

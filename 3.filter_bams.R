@@ -2,7 +2,7 @@
 args = commandArgs(trailingOnly=TRUE)
 
 samplename <- args[1]
-#samplename <- "409_004_D9YWF_GTAGAGGA-CTCTCTAT_L001"
+#samplename <- "409_040_DCKVC_GGACTCCT-CTCTCTAT_L001"
 venn_cols <- c("#7C1BE2", "#1B9E77", "#EFC000FF", "blue")
 chr22_roi <- c(29683079, 29686467) # region covered by primers
 chr11_roi <- c(128628010, 128683162) # region of exon 3 - exon 9
@@ -48,7 +48,7 @@ plot_cols <- plot_cols[c(1:3, 5, 4, 6:length(plot_cols))]
 
 
 ####################################################################################
-### 1. Load and filter bams ###
+### 1. Load bams ###
 ####################################################################################
 
 # define file types to import:
@@ -107,6 +107,11 @@ if (!file.exists(paste0(Robject_dir, "VAF_calculation_reads.Rdata"))) {
   )
   read_numbers["split_pairs",] = NA
   read_numbers["non_split_concordant_pairs",] = NA
+  
+  
+  ####################################################################################
+  ### 2a. Filter bams ###
+  ####################################################################################
 
   # remove pairs not mapped to either chr11 or 22:
   chr_filt_bam <- list(
@@ -180,7 +185,12 @@ if (!file.exists(paste0(Robject_dir, "VAF_calculation_reads.Rdata"))) {
     )
 
   })
-  
+
+
+  ####################################################################################
+  ### 2b. Filter bams ###
+  ####################################################################################
+
   # update read number record:
   read_numbers$mmappers_removed <- c(
     sapply(temp_bam, function(x) {
@@ -323,29 +333,51 @@ if (!file.exists(paste0(Robject_dir, "VAF_calculation_reads.Rdata"))) {
   # record read numbers:
   read_numbers$split_removed_from_discordant <- sapply(final_bam, length)
   
-  # isolate reads within roi for supporting reads on those samples without 
-  # fusions called:
-  roi <- GRanges(
-    seqnames = c("chr11", "chr22"),
-    range = IRanges(
-      start = c(chr11_roi[1], chr22_roi[1]), 
-      end = c(chr11_roi[2], chr22_roi[2])
-    ),
-    strand = "*"
-  )
+  saveRDS(unfilt_bam, paste0(Robject_dir, "unfiltered_VAF_calculation_reads.Rdata"))
+  saveRDS(final_bam, paste0(Robject_dir, "VAF_calculation_reads.Rdata"))
+  saveRDS(read_numbers, paste0(Robject_dir, "VAF_calculation_read_nos.Rdata"))
   
+} else {
+
+  unfilt_bam <- readRDS(paste0(Robject_dir, "unfiltered_VAF_calculation_reads.Rdata"))
+  final_bam <- readRDS(paste0(Robject_dir, "VAF_calculation_reads.Rdata"))
+  read_numbers <- readRDS(paste0(Robject_dir, "VAF_calculation_read_nos.Rdata"))
+
+}
+
+
+####################################################################################
+### 3. Fetch and save non-specific fusion-supporting reads ###
+####################################################################################
+
+# isolate reads within roi for supporting reads on those samples without 
+# fusions called:
+roi <- GRanges(
+  seqnames = c("chr11", "chr22"),
+  range = IRanges(
+    start = c(chr11_roi[1], chr22_roi[1]), 
+    end = c(chr11_roi[2], chr22_roi[2])
+  ),
+  strand = "*"
+)
+
+if (length(final_bam$discordant_pairs) > 0) {
   # keep roi discordant reads:
   # split by read name to keep pairs together:
   spl <- split(final_bam$discordant_pairs, final_bam$discordant_pairs$qname)
   
   roi_discordant <- lapply(spl, function(x) {
-    
+
     # return if chr11 read overlaps chr11 region and same for ch22:
     olaps <- findOverlaps(x, roi)
     olap_roi <- roi[subjectHits(olaps)]
     
     if (length(olap_roi) > 1) {
-      if (seqnames(olap_roi)[1] == "chr11" & olap_roi[2] == "chr22") {
+      if (
+        as.logical(
+          seqnames(olap_roi)[1] == "chr11" & seqnames(olap_roi[2]) == "chr22"
+        )
+      ) {
         return(x)
       } else {
         return(NULL)
@@ -361,21 +393,94 @@ if (!file.exists(paste0(Robject_dir, "VAF_calculation_reads.Rdata"))) {
     sapply(roi_discordant, function(y) !is.null(y))
   ]
 
-  saveRDS(unfilt_bam, paste0(Robject_dir, "unfiltered_VAF_calculation_reads.Rdata"))
-  saveRDS(final_bam, paste0(Robject_dir, "VAF_calculation_reads.Rdata"))
-  saveRDS(read_numbers, paste0(Robject_dir, "VAF_calculation_read_nos.Rdata"))
+  # bind as list:
+  roi_discordant <- unlist(
+    as(roi_discordant, "GRangesList")
+  )
+  names(roi_discordant) <- NULL
   
 } else {
-
-  unfilt_bam <- readRDS(paste0(Robject_dir, "unfiltered_VAF_calculation_reads.Rdata"))
-  final_bam <- readRDS(paste0(Robject_dir, "VAF_calculation_reads.Rdata"))
-  read_numbers <- readRDS(paste0(Robject_dir, "VAF_calculation_read_nos.Rdata"))
-
+  roi_discordant <- GRanges(NULL)
 }
+
+if (length(final_bam$split_pairs) > 0) {
+  
+  # fetch roi split reads:
+  # split by read name to keep pairs together:
+  spl <- split(final_bam$split_pairs, final_bam$split_pairs$qname)
+  
+  for (i in 1:length(spl)) {
+    
+    # add to keep list if chr11 read overlaps chr11 region and same for ch22:
+    olaps <- findOverlaps(spl[[i]], roi)
+    olap_roi <- roi[subjectHits(olaps)]
+    
+    if (length(olap_roi) > 1) {
+      
+      if (
+        as.logical(
+          seqnames(olap_roi)[1] == "chr11" & seqnames(olap_roi[2]) == "chr22"
+        )
+      ) {
+        
+        keep <- TRUE
+        
+      } else {
+        
+        supp <- final_bam$split_supp[
+          final_bam$split_supp$qname == unique(spl[[i]]$qname)
+        ]
+        
+        if (as.logical(unique(seqnames(olap_roi)) != seqnames(supp))) {
+          keep <- TRUE
+        } else {
+          keep <- FALSE
+        }
+        
+      }
+    } else {
+      keep <- FALSE
+    }
+    
+    if (keep) {
+      if (i==1) {
+        roi_split <- list(spl[[i]])
+      } else {
+        roi_split <- c(roi_split, spl[[i]])
+      }
+    } else {
+      if (i==1) {
+        roi_split <- list(GRanges(NULL))
+      } else {
+        roi_split <- c(roi_split, GRanges(NULL))
+      }
+    }
+
+  }
+
+  # bind as list:
+  roi_split <- unlist(
+    as(roi_split, "GRangesList")
+  )
+  names(roi_split) <- NULL
+  
+} else {
+  roi_split <- GRanges(NULL)
+}
+
+# calculate and save total number of fusion supporting reads:
+supporting_read_length <- length(roi_discordant)/2 + length(roi_split)/2
+write.table(
+  supporting_read_length,
+  paste0(table_dir, "non_specific_fusion_supporting_reads.txt"),
+  quote = F,
+  row.names = F,
+  col.names = F
+)
 
 
 ####################################################################################
-### 2. Plot read numbers ###
+### 4. Plot read numbers ###
 ####################################################################################
 
 # create venn diagram of filtered vs unfiltered reads:
