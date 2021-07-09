@@ -1,11 +1,12 @@
 args = commandArgs(trailingOnly=TRUE)
 
 samplename <- args[1]
-#samplename <- "409_001_D9YW9_TCCTGAGC-CTCTCTAT_L001"
+#samplename <- "409_010_DB62M_ATCTCAGG-CTCTCTAT_L001"
 
+supps_allowed <- 2
 venn_cols <- c("#7C1BE2", "#1B9E77", "#EFC000FF", "blue")
 min_overlap <- 19
-disc_read_window <- 200
+read_window <- 200
 same_fusion_window <- 10
 fusion_selection_factor <- 1.5
 
@@ -14,10 +15,13 @@ home_dir <- "/share/ScratchGeneral/jamtor/"
 project_dir <- paste0(home_dir, "projects/ewing_ctDNA/")
 func_dir <- paste0(project_dir, "scripts/functions/")
 result_dir <- paste0(project_dir, "results/")
-Robject_dir <- paste0(result_dir, "VAF_calculation/", samplename, "/Rdata/")
-out_dir <- paste0(result_dir, "VAF_calculation/", samplename, "/")
+
+VAF_dir <- paste0(
+  result_dir, "VAF_calculation/", samplename, "/max_supps_allowed_", 
+  supps_allowed, "/"
+)
+Robject_dir <- paste0(VAF_dir, "Rdata/")
 system(paste0("mkdir -p ", Robject_dir))
-system(paste0("mkdir -p ", out_dir))
 
 fusion_dir <- paste0(result_dir, "fusions/", samplename, "/")
 bam_path <- paste0(result_dir, "BWA_and_picard/bams/")
@@ -111,23 +115,22 @@ plot_cols <- plot_cols[c(1:3, 5, 4, 6:length(plot_cols))]
 # load in fusions:
 both_fusions <- readRDS(paste0(fusion_dir, "EWSR1_GOI_fusions.Rdata"))
 
-# fetch low confidence breakpoints:
-fusions <- both_fusions$low_conf_bp$true_positives$fusions$FLI1
+# fetch high confidence and low confidence breakpoints:
+hc_fusions <- both_fusions$high_conf_bp$true_positives$fusions$FLI1
+lc_fusions <- both_fusions$low_conf_bp$true_positives$fusions$FLI1
 
-# continue if fusions exist:
-if (length(fusions) > 0) {
+# label confidence of breakpoints:
+try(hc_fusions$svaba_conf <- "high")
+try(lc_fusions$svaba_conf <- "low")
   
-  # label high confidence breakpoints:
-  fusions$svaba_conf <- "low"
-  fusions[
-    seqnames(fusions) == seqnames(
-      both_fusions$high_conf_bp$true_positives$fusions$FLI1
-    ) & start(fusions) == start(
-      both_fusions$high_conf_bp$true_positives$fusions$FLI1
-    ) & fusions$join_chr == both_fusions$high_conf_bp$true_positives$fusions$FLI1$join_chr & 
-      fusions$join_coord == both_fusions$high_conf_bp$true_positives$fusions$FLI1$join_coord
-  ]$svaba_conf <- "high"
- 
+# merge and remove duplicates:
+fusions <- c(hc_fusions, lc_fusions)
+fusions <- fusions[
+  !duplicated(start(fusions)) | !duplicated(fusions$join_coord)
+]
+
+if (length(fusions) > 0) {
+
   # make chr22 coord main fusion coord:
   fusions <- GRanges(
     seqnames = fusions$join_chr,
@@ -171,6 +174,8 @@ if (length(fusions) > 0) {
   filtered_reads <- readRDS(paste0(Robject_dir, "VAF_calculation_reads.Rdata"))
   
 }
+
+#save.image(paste0(Robject_dir, "data_loaded_img.Rdata"))
 
 
 ####################################################################################
@@ -360,7 +365,9 @@ if (exists("filtered_reads")) {
   }
 
 }
-  
+
+#save.image(paste0(Robject_dir, "overlaps_found_img.Rdata"))
+
   
 ####################################################################################
 ### 3. Find breakpoint-spanning reads ###
@@ -477,7 +484,7 @@ if (exists("olap_reads")) {
           spl, 
           find_spanning_discordant, 
           fusions = fusions[i], 
-          exp_window = disc_read_window
+          exp_window = read_window
         )
         
         # merge to granges object:
@@ -499,7 +506,9 @@ if (exists("olap_reads")) {
       }
       
     } else {
-      all_reads[[i]]$supporting$spanning <- GRanges(NULL)
+      for (i in 1:length(all_reads)) {
+        all_reads[[i]]$supporting$spanning <- GRanges(NULL)
+      }
     }
     
     saveRDS(all_reads, paste0(Robject_dir, "fusion_reads.Rdata"))
@@ -511,14 +520,15 @@ if (exists("olap_reads")) {
   }
   
 }
-  
-  
-  
+
+#save.image(paste0(Robject_dir, "spanning_found_img.Rdata"))
+
+
 ####################################################################################
 ### 4. Calculate proportions of non-supporting vs supporting read pairs for each
 # sample ###
 ####################################################################################
-  
+
 if (exists("all_reads")) {
   
   # combine all supporting reads, and all non-supporting reads, for each fusion:
@@ -557,8 +567,6 @@ if (exists("all_reads")) {
       all(sapply(pair_check, function(x) x[names(x) == "non_supporting"]))
     )
   )
-  
-  #save.image(paste0(Robject_dir, "temp_image.Rdata"))
   
   # save each group as sam file:
   for (i in 1:length(all_reads)) {
@@ -681,7 +689,7 @@ if (exists("all_reads")) {
     }
   }
   
-  # keep breakpoints with greatest number of supporting reads:
+  # calculate VAFs for all fusions:
   read_counts <- sapply(combined_reads, function(x) {
     return(
       sapply(x, function(y) {
@@ -700,7 +708,7 @@ if (exists("all_reads")) {
   
   write.table(
     final_combined_no, 
-    paste0(out_dir, "final_fusion_read_nos.txt"),
+    paste0(VAF_dir, "final_fusion_read_nos.txt"),
     quote = F,
     row.names = F,
     col.names = T
@@ -710,29 +718,28 @@ if (exists("all_reads")) {
   #   return(lapply(x, create_venn, venn_cols))
   # })
   
-  # calculate supporting vs non-supporting proportion:
-  VAF <- round(
-    (length(final_combined$supporting)/
-      (length(final_combined$supporting) + length(final_combined$non_supporting))
-    )*100,
-    1
+  # calculate VAFs for all fusions:
+  VAFs <- round(
+    (read_counts["supporting",]/
+       (read_counts["supporting",] + read_counts["non_supporting",]))*100
+    , 1
   )
   
-  # save VAF:
+  # save VAFs:
   write.table(
-    VAF,
-    paste0(out_dir, "VAF.txt"),
+    as.data.frame(VAFs),
+    paste0(VAF_dir, "VAFs.txt"),
     quote = F,
-    row.names = F,
+    row.names = T,
     col.names = F
   )
   
 }
 
 # create dummy file for Snakemake if no VAF was calculated:
-if (!file.exists(paste0(out_dir, "VAF.txt"))) {
-  system(paste0("touch ", out_dir, "VAF.txt"))
-  system(paste0("touch ", out_dir, "final_fusion_read_nos.txt"))
+if (!file.exists(paste0(VAF_dir, "VAFs.txt"))) {
+  system(paste0("touch ", VAF_dir, "VAFs.txt"))
+  system(paste0("touch ", VAF_dir, "final_fusion_read_nos.txt"))
 } 
   
   

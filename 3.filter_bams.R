@@ -2,18 +2,22 @@
 args = commandArgs(trailingOnly=TRUE)
 
 samplename <- args[1]
-#samplename <- "409_040_DCKVC_GGACTCCT-CTCTCTAT_L001"
+#samplename <- "409_010_DB62M_ATCTCAGG-CTCTCTAT_L001"
 venn_cols <- c("#7C1BE2", "#1B9E77", "#EFC000FF", "blue")
 chr22_roi <- c(29683079, 29686467) # region covered by primers
 chr11_roi <- c(128628010, 128683162) # region of exon 3 - exon 9
+supps_allowed <- 2
 
 #home_dir <- "/Users/torpor/clusterHome/"
 home_dir <- "/share/ScratchGeneral/jamtor/"
 project_dir <- paste0(home_dir, "projects/ewing_ctDNA/")
 func_dir <- paste0(project_dir, "scripts/functions/")
 result_dir <- paste0(project_dir, "results/")
-Robject_dir <- paste0(result_dir, "VAF_calculation/", samplename, "/Rdata/")
-table_dir <- paste0(result_dir, "VAF_calculation/", samplename, "/tables/")
+
+out_path <- paste0(result_dir, "VAF_calculation/", samplename, 
+  "/max_supps_allowed_", supps_allowed, "/")
+Robject_dir <- paste0(out_path, "Rdata/")
+table_dir <- paste0(out_path, "tables/")
 system(paste0("mkdir -p ", Robject_dir))
 system(paste0("mkdir -p ", table_dir))
 
@@ -207,11 +211,11 @@ if (!file.exists(paste0(Robject_dir, "VAF_calculation_reads.Rdata"))) {
   
   filt_bam <- lapply(paired_bam, function(x) {
     
-    # remove reads with >1 supplementary alignment:
+    # remove reads with > supps_allowed supplementary alignments:
     spl <- split(x, x$qname)
     filt_spl <- spl[
       sapply(spl, function(y) {
-        return(length(which(y$flag >= 2000)) <= 1)
+        return(length(which(y$flag >= 2000)) <= supps_allowed)
       })
     ]
     x <- unlist(filt_spl)

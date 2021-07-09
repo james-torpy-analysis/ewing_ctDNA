@@ -143,7 +143,7 @@ SAMPLES = list([
 rule all:
     input:
         expand(
-            VAF_dir + '{sample}/VAF.txt',
+            VAF_dir + '{sample}/VAFs.txt',
             sample = SAMPLES
         )
 
@@ -284,7 +284,7 @@ rule calc_VAFs:
     input:
         VAF_dir + '{sample}/Rdata/VAF_calculation_reads.Rdata'
     output:
-        VAF = VAF_dir + '{sample}/VAF.txt',
+        VAF = VAF_dir + '{sample}/VAFs.txt',
         read_no = VAF_dir + '{sample}/final_fusion_read_nos.txt'
     threads: 8
     shell:

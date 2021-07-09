@@ -122,13 +122,23 @@ for (i in 1:length(fusion_nos)) {
 
 VAFs <- unlist(
   lapply(samplenames, function(x) {
-    tryCatch(
+    
+    print(x)
+    
+    all_VAFs <- tryCatch(
       read.table(
-        paste0(VAF_dir, x, "/VAF.txt"),
+        paste0(VAF_dir, x, "/VAFs.txt"),
         header = F
       ),
       error=function(err) NA
     )
+    
+    if (suppressWarnings(!is.na(all_VAFs))) {
+      return(max(all_VAFs$V2))
+    } else {
+      return(all_VAFs)
+    }
+    
   })
 )
 
@@ -184,7 +194,7 @@ fusion_dfs <- lapply(fusion_dfs, function(x) {
   )
 })
 
-save.image(paste0(Robject_dir, "temp_img.Rdata"))
+#save.image(paste0(Robject_dir, "temp_img.Rdata"))
 #load(paste0(Robject_dir, "temp_img.Rdata"))
 
 
