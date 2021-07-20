@@ -1,42 +1,42 @@
 find_overlapping_reads <- function(
   read_pair,
-  fusion,
-  chromosome
+  SV,
+  alt_coords = FALSE
 ) {
   
-  # if finding overlaps with chr11 fusion coord, make this coord main one:
-  if (chromosome == "chr11") {
+  # if finding overlaps with alt SV coord, make this coord main one:
+  if (alt_coords) {
     
-    fusion <- GRanges(
-      seqnames = fusion$join_chr,
-      ranges = IRanges(start = fusion$join_coord, end = fusion$join_coord),
+    SV <- GRanges(
+      seqnames = SV$join_chr,
+      ranges = IRanges(start = SV$join_coord, end = SV$join_coord),
       strand = "*",
-      join_chr = seqnames(fusion),
-      join_coord = start(fusion)
+      join_chr = seqnames(SV),
+      join_coord = start(SV)
     )
     
   }
   
-  # find overlaps with fusion:
-  olaps <- findOverlaps(read_pair, fusion)
+  # find overlaps with SV:
+  olaps <- findOverlaps(read_pair, SV)
   
   if (length(olaps) > 0) {
     
     # add overlapping breakpoint information:
-    read_pair$fusion_chr <- NA
-    read_pair$fusion_coord <- NA
-    read_pair$fusion_mate_chr <- NA
-    read_pair$fusion_mate_coord <- NA
+    read_pair$SV_chr <- NA
+    read_pair$SV_coord <- NA
+    read_pair$SV_mate_chr <- NA
+    read_pair$SV_mate_coord <- NA
     
-    read_pair[queryHits(olaps)]$fusion_chr <- chromosome
-    read_pair[queryHits(olaps)]$fusion_coord <- start(fusion)[
+    read_pair[queryHits(olaps)]$SV_chr <- seqnames(SV)
+    read_pair[queryHits(olaps)]$SV_coord <- start(SV)[
       subjectHits(olaps)
     ]
     
-    read_pair[queryHits(olaps)]$fusion_mate_chr <- as.character(
-      unique(fusion$join_chr)
+    read_pair[queryHits(olaps)]$SV_mate_chr <- as.character(
+      unique(SV$join_chr)
     )
-    read_pair[queryHits(olaps)]$fusion_mate_coord <- fusion$join_coord[
+    read_pair[queryHits(olaps)]$SV_mate_coord <- SV$join_coord[
       subjectHits(olaps)
     ]
     
@@ -44,8 +44,10 @@ find_overlapping_reads <- function(
     # as they do not span the breakpoints:
     if (
       all(
-        start(read_pair[queryHits(olaps)]) == read_pair[queryHits(olaps)]$fusion_coord |
-          end(read_pair[queryHits(olaps)]) == read_pair[queryHits(olaps)]$fusion_coord
+        start(read_pair[queryHits(olaps)]) == 
+          read_pair[queryHits(olaps)]$SV_coord |
+          end(read_pair[queryHits(olaps)]) == 
+          read_pair[queryHits(olaps)]$SV_coord
       )
     ) {
       read_pair <- NULL

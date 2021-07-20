@@ -2,7 +2,7 @@ longitudinal_heatmap <- function(
   fusion_df, 
   hm_title, 
   type,
-  annotation = "false positives",
+  annot = "false positives",
   hm_cols
 ) {
   
@@ -244,7 +244,7 @@ longitudinal_heatmap <- function(
       column_to_rownames("type")
     
     # create annotation df:
-    if (annotation == "false positives") {
+    if (annot == "false positives") {
       
       # create a false positive df in parallel:
       annot_df <- subset(
@@ -373,7 +373,7 @@ longitudinal_heatmap <- function(
       
   })
   
-  if (annotation == "false positives") {
+  if (annot == "false positives") {
     
     both_split <- list(
       detection_df = lapply(hm_split, function(x) x$detection_df),
@@ -500,7 +500,7 @@ longitudinal_heatmap <- function(
       )
     }
     
-  } else if (annotation == "VAF") {
+  } else if (annot == "VAF") {
     
     all_split <- list(
       detection_df = lapply(hm_split, function(x) x$detection_df),
@@ -529,10 +529,10 @@ longitudinal_heatmap <- function(
         
         if (!all(is.na(hm_df$FISH))) {
           temp_split <- lapply(temp_split, function(y) {
-            # change all NAs to "unknown":
-            y[is.na(y)] <- "unknown"
+            # change all NAs to " ":
+            y[is.na(y)] <- " "
             # make FISH column a factor with required order:
-            y$FISH <- factor(y$FISH, levels = c("FISH_detection", "no_FISH_detection", "unknown"))
+            y$FISH <- factor(y$FISH, levels = c("FISH_detection", "no_FISH_detection", " "))
             # order each split by FISH column:
             y <- y[order(y$FISH),]
             return(y)
@@ -583,13 +583,22 @@ longitudinal_heatmap <- function(
         rownames(hm_dfs$detection_df$hm_df), 
         colnames(hm_dfs$detection_df$hm_df)
       ]
-      apply(x, 2, function(y) {
-        y[is.na(y)] <- " "
-        y[y == "unknown"] <- " "
-        return(y)
-      })
     })
- 
+    final_annots$VAF <- apply(final_annots$VAF, 2, function(y) {
+      y[is.na(y)] <- " "
+      y[y == 0] <- " "
+      y[y == "unknown"] <- " "
+      y[y != " "] <- round(as.numeric(y[y != " "])*100, 1)
+      y[y != " "] <- paste0(y[y != " "], "%")
+      return(y)
+    })
+    final_annots$sread <- apply(final_annots$sread, 2, function(y) {
+      y[is.na(y)] <- " "
+      y[y == 0] <- " "
+      y[y == "unknown"] <- " "
+      return(y)
+    })
+
     # create treatment_split vector:
     treatment_split <- c("FISH", rep("NOT_FISH", ncol(hm_dfs$detection_df$hm_df) - 1))
     
@@ -610,7 +619,7 @@ longitudinal_heatmap <- function(
             cell_fun = function(j, i, x, y, width, height, fill) {
               grid.text(
                 final_annots$VAF[i, j], x, y, 
-                gp = gpar(fontsize = 10, fontface = "bold", col = "#221699")
+                gp = gpar(fontsize = 9, fontface = "bold", col = "#221699")
               )
             }
           ),
@@ -626,7 +635,7 @@ longitudinal_heatmap <- function(
             cell_fun = function(j, i, x, y, width, height, fill) {
               grid.text(
                 final_annots$sread[i, j], x, y, 
-                gp = gpar(fontsize = 10, fontface = "bold", col = "#221699")
+                gp = gpar(fontsize = 10, fontface = "bold", col = "#115E0F")
               )
             }
           )

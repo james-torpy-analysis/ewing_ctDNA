@@ -7,9 +7,9 @@
 ### This script remaps bams to hg19 and uses SvABA and Manta to identify 
 # breakpoints in genomic data ###
 
-
-# define directories:
+# define variables:
 project_name = 'ewing_ctDNA'
+capture_id = 'CDHS-34925Z-409'
 
 # define/create directories:
 home_dir = '/share/ScratchGeneral/jamtor/'
@@ -27,6 +27,7 @@ svaba_dir = 'results/svaba/BWA_and_picard/'
 int_dir = 'results/BWA_and_picard/int_bams/'
 fusion_dir = 'results/fusions/'
 VAF_dir = 'results/VAF_calculation/'
+variant_dir = 'results/smcounter2/'
 
 R_dir = "/share/ClusterShare/thingamajigs/jamtor/local/lib/miniconda3/envs/snkenv/bin/"
 
@@ -47,7 +48,7 @@ SAMPLES = list([
     '409_025_DCB8V_TCCTGAGC-CTCTCTAT_L001', '409_026_DCB8V_GGACTCCT-CTCTCTAT_L001',  
     '409_027_DCKVC_TAGGCATG-CTCTCTAT_L001', '409_027_DCKVC_TAGGCATG-CTCTCTAT_L001', 
     '409_028_DCB8V_CTCTCTAC-CTCTCTAT_L001',  
-    '409_029_DCB8V_CGAGGCTG-CTCTCTAT_L001', '409_030_DCB8V_AAGAGGCA-CTCTCTAT_L001', 
+    '409_030_DCB8V_AAGAGGCA-CTCTCTAT_L001', 
     '409_031_DCB8V_GTAGAGGA-CTCTCTAT_L001', '409_032_DCB94_GGACTCCT-CTCTCTAT_L001', 
     '409_033_DCB94_TAGGCATG-CTCTCTAT_L001', '409_034_DCB94_CTCTCTAC-CTCTCTAT_L001', 
     '409_035_DCB94_CGAGGCTG-CTCTCTAT_L001', '409_036_DCB94_AAGAGGCA-CTCTCTAT_L001', 
@@ -69,17 +70,8 @@ SAMPLES = list([
     '409_067_DCKVC_GTAGAGGA-CTCTCTAT_L001', '409_068_DCKVC_GCTCATGA-CTCTCTAT_L001', 
     '409_069_DCKVC_ATCTCAGG-CTCTCTAT_L001'
 ])
-
 #SAMPLES = list([
-#    '409_027_DCKVC_TAGGCATG-CTCTCTAT_L001'
-#])
-
-#SAMPLES = list([
-#    '409_001_D9YW9_TCCTGAGC-CTCTCTAT_L001', '409_032_DCB94_GGACTCCT-CTCTCTAT_L001',
-#    '409_002_D9YW9_GGACTCCT-CTCTCTAT_L001', '409_040_DCKVC_GGACTCCT-CTCTCTAT_L001', 
-#    '409_041_DCCT9_TAGGCATG-CTCTCTAT_L001', '409_065_DCKVC_CGTACTAG-CTCTCTAT_L001',
-#    '409_066_DCKVC_AAGAGGCA-CTCTCTAT_L001', '409_018_DBV4V_AAGAGGCA-CTCTCTAT_L001', 
-#    '409_019_DBV4V_GCTCATGA-CTCTCTAT_L001', '409_033_DCB94_TAGGCATG-CTCTCTAT_L001'
+#    '409_001_D9YW9_TCCTGAGC-CTCTCTAT_L001', '409_049_DCB94_CGTACTAG-CTCTCTAT_L001'
 #])
 
 ## ANZCHOG abstract:
@@ -102,51 +94,16 @@ SAMPLES = list([
 #	'409_063_DCCT9_TCCTGAGC-CTCTCTAT_L001'
 #])
 
-## testing:
-#SAMPLES = list([
-#    '409_060_DCCT9_TAAGGCGA-CTCTCTAT_L001'
-#])
-
-#TYPE = list([
-#    'SV', 'all'
-#])
-
-
-#rule all:
-#    input:
-#        expand(
-#            align_dir + '{sample}/{sample}.consensus.bam.bai',
-#            sample = SAMPLES
-#        )
-
-#rule all:
-#    input:
-#        expand(
-#            svaba_dir + '{sample}/{sample}.svaba.sv.vcf.idx',
-#            sample=SAMPLES
-#        )
-
-#rule all:
-#    input:
-#        expand(
-#            'logs/completed_jobs/{sample}_complete',
-#            sample = SAMPLES
-#        )
-
-#rule all:
-#    input:
-#        expand(
-#            fusion_dir + '{sample}/EWSR1_GOI_fusions.Rdata',
-#            sample = SAMPLES
-#        )
-
 rule all:
     input:
         expand(
-            VAF_dir + '{sample}/VAFs.txt',
+            variant_dir + '{sample}/{sample}.smCounter.cut.vcf',
+            sample = SAMPLES
+        ),
+        expand(
+            VAF_dir + '{sample}/non_specific_fusion_supporting_reads.tsv',
             sample = SAMPLES
         )
-
 
 ######################################################################################################
 ### 1. UMI collapse and BWA ###
@@ -159,7 +116,7 @@ rule BWA_and_umi_collapse:
     output:
         bam = align_dir + '{sample}/{sample}.consensus.bam',
         bai = align_dir + '{sample}/{sample}.consensus.bam.bai',
-    threads: 7
+    threads: 8
     shell:
         'mkdir -p logs/BWA_and_picard; ' +
         'cd logs/BWA_and_picard; ' + 
@@ -179,7 +136,7 @@ rule svaba:
    output:
        filt = svaba_dir + '{sample}/{sample}.svaba.sv.vcf',
        unfilt = svaba_dir + '{sample}/{sample}.svaba.unfiltered.sv.vcf'
-   threads: 7
+   threads: 8
    shell:
        'mkdir -p logs/svaba; ' + 
         'cd logs/svaba; ' + 
@@ -249,7 +206,7 @@ rule find_fusions:
         unfilt = svaba_dir + '{sample}/{sample}.svaba.semifiltered.sv.formatted.vcf.idx'
     output:
         fusion_dir + '{sample}/EWSR1_GOI_fusions.Rdata'
-    threads: 7
+    threads: 8
     shell:
         "mkdir -p logs/find_fusions/{wildcards.sample}/; " + 
         "cd logs/find_fusions/{wildcards.sample}/; " +
@@ -259,39 +216,60 @@ rule find_fusions:
 
 
 ######################################################################################################
-### 5. Filter bams ###
-######################################################################################################
-
-rule filter_bams:
-    input:
-        fusion_dir + '{sample}/EWSR1_GOI_fusions.Rdata'
-    output:
-        VAF_dir + '{sample}/Rdata/VAF_calculation_reads.Rdata'
-    threads: 8
-    shell:
-        "mkdir -p logs/filter_bams/{wildcards.sample}/; " + 
-        "cd logs/filter_bams/{wildcards.sample}/; " +
-        "{R_dir}/R CMD BATCH  --no-save '--args" + 
-        " {wildcards.sample}" + 
-        "' ../../../scripts/3.filter_bams.R"
-
-
-######################################################################################################
-### 6. Calculate VAFs ###
+### 5. Calculate VAFs ###
 ######################################################################################################
 
 rule calc_VAFs:
     input:
-        VAF_dir + '{sample}/Rdata/VAF_calculation_reads.Rdata'
+        fusion_dir + '{sample}/EWSR1_GOI_fusions.Rdata'
     output:
-        VAF = VAF_dir + '{sample}/VAFs.txt',
-        read_no = VAF_dir + '{sample}/final_fusion_read_nos.txt'
+        VAF_dir + '{sample}/Rdata/VAFs.Rdata'
     threads: 8
     shell:
         "mkdir -p logs/VAF_calculation/{wildcards.sample}/; " + 
         "cd logs/VAF_calculation/{wildcards.sample}/; " +
         "{R_dir}/R CMD BATCH  --no-save '--args" + 
+        " {project_name}" + 
         " {wildcards.sample}" + 
-        "' ../../../scripts/4.calculate_VAFs.R"
+        "' ../../../scripts/3.vaf.R"
 
+
+######################################################################################################
+### 6. Find supporting reads ###
+######################################################################################################
+
+rule find_supp:
+    input:
+        VAF_dir + '{sample}/Rdata/VAFs.Rdata'
+    output:
+        VAF_dir + '{sample}/non_specific_fusion_supporting_reads.tsv'
+    threads: 8
+    shell:
+        "mkdir -p logs/find_supp/{wildcards.sample}/; " + 
+        "cd logs/find_supp/{wildcards.sample}/; " +
+        "{R_dir}/R CMD BATCH  --no-save '--args" + 
+        " {project_name}" + 
+        " {wildcards.sample}" + 
+        " 19" + # min overlapp required for read 1 to be counted as supporting
+        " 19" + # min overlapp required for read 2 to be counted as supporting
+        "' ../../../scripts/4.find_supporting_reads.R"
+
+
+######################################################################################################
+### 7. Call short variants ###
+######################################################################################################
+
+rule find_variants:
+    input:
+        fq1 = fq_dir + '{sample}/{sample}_R1.fastq.gz',
+        fq2 = fq_dir + '{sample}/{sample}_R2.fastq.gz'
+    output:
+        variant_dir + '{sample}/{sample}.smCounter.cut.vcf'
+    threads: 8
+    shell:
+        "mkdir -p logs/find_variants/{wildcards.sample}/; " + 
+        "cd logs/find_variants/{wildcards.sample}/; " +
+        " ../../../scripts/5.smcounter2.sh " +
+        "{wildcards.sample} " +
+        "{capture_id} 2> {wildcards.sample}.smcounter2.errors"
 
