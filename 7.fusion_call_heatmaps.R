@@ -24,16 +24,27 @@ library(dplyr)
 ####################################################################################
 
 fetch_fusion_no <- dget(paste0(func_dir, "fetch_fusion_no.R"))
-longitudinal_heatmap <- dget(paste0(func_dir, "longitudinal_heatmap.R"))
+longitudinal_patient_heatmap <- dget(
+  paste0(func_dir, "longitudinal_patient_heatmap.R")
+)
+longitudinal_dilution_heatmap <- dget(
+  paste0(func_dir, "longitudinal_dilution_heatmap.R")
+)
 
 hm_cols <- c(
-  FISH_detection = "#75EA3D",
-  no_FISH_detection = "#D68EB7",
+  pathology_detection = "#75EA3D",
+  no_pathology_detection = "#58B9DB",
   stringent_detection = "#F7A006",
   less_stringent_detection = "#F4D30B",
   supporting_reads = "white",
   no_supporting_reads = "black",
   unknown = "grey"
+)
+
+annot_cols <- c(
+  FP = "#991425",
+  VAF = "#221699",
+  sread = "#115E0F"
 )
 
 
@@ -150,10 +161,6 @@ VAF_df$Sample <- gsub(
   sub(".*?_(.+)", "\\1", unlist(samplenames))
 )
 
-# save VAFs:
-VAF_df <- VAF_df %>% column_to_rownames("Sample")
-saveRDS(VAF_df, paste0(Robject_dir, "all_VAFs.Rdata"))
-
 # merge VAFs with fusion df:
 fusion_dfs <- lapply(fusion_dfs, function(x) {
   x <- merge(
@@ -164,6 +171,9 @@ fusion_dfs <- lapply(fusion_dfs, function(x) {
   return(x)
 })
 
+# save VAFs:
+VAF_df <- VAF_df %>% column_to_rownames("Sample")
+saveRDS(VAF_df, paste0(Robject_dir, "all_VAFs.Rdata"))
 
 # fetch fusion-supporting reads:
 fusion_read_nos <- sapply(samplenames, function(x) {
@@ -204,95 +214,115 @@ save.image(paste0(Robject_dir, "temp_img.Rdata"))
 ### 2. Create longitudinal heatmaps ###
 ####################################################################################
 
-patient_heatmap_FP <- longitudinal_heatmap(
+patient_heatmaps_VAF <- longitudinal_patient_heatmap(
   fusion_df = fusion_dfs$patient,
   hm_title = "Patient EWSR1/FLI1 fusion detections",
-  type = "patient",
-  annot = "false positives",
-  hm_cols = hm_cols
-)
-
-png(
-  paste0(plot_dir, "patient_fusion_detection_heatmap_FP_annotated.png"),
-  width = 10,
-  height = 6,
-  unit = "in",
-  res = 300
-)
-  print(patient_heatmap_FP)
-dev.off()
-
-patient_heatmaps_VAF <- longitudinal_heatmap(
-  fusion_df = fusion_dfs$patient,
-  hm_title = "Patient EWSR1/FLI1 fusion detections",
-  type = "patient",
   annot = "VAF",
   hm_cols = hm_cols
 )
 
-png(paste0(plot_dir, "patient_fusion_detection_heatmap_VAFs_annotated.png"),
-    width = 10,
-    height = 6,
-    unit = "in",
-    res = 300
-)
-  print(patient_heatmaps_VAF$VAF_annot)
-dev.off()
-
-png(
-  paste0(plot_dir, "patient_fusion_detection_heatmap_supporting_reads_annotated.png"),
-  width = 10,
-  height = 6,
-  unit = "in",
-  res = 300
-)
-  print(patient_heatmaps_VAF$sread_annot)
-dev.off()
-
-dilution_heatmap_FP <- longitudinal_heatmap(
+dilution_heatmaps_VAF <- longitudinal_dilution_heatmap(
   fusion_df = fusion_dfs$dilution,
   hm_title = "Cell line EWSR1/FLI1 fusion detections",
-  type = "dilution",
-  annot = "false positives",
-  hm_cols = hm_cols
-)
-
-png(
-  paste0(plot_dir, "cell_line_fusion_detection_heatmap_FP_annotated.png"),
-  width = 10,
-  height = 3,
-  unit = "in",
-  res = 300
-)
-  print(dilution_heatmap_FP)
-dev.off()
-
-dilution_heatmaps_VAF <- longitudinal_heatmap(
-  fusion_df = fusion_dfs$dilution,
-  hm_title = "Cell line EWSR1/FLI1 fusion detections",
-  type = "dilution",
   annot = "VAF",
   hm_cols = hm_cols
 )
 
-png(
-  paste0(plot_dir, "cell_line_fusion_detection_heatmap_VAFs_annotated.png"),
-  width = 10,
-  height = 3,
-  unit = "in",
-  res = 300
+all_heatmaps <- list(
+  patient_heatmap_FP = longitudinal_heatmap(
+    fusion_df = fusion_dfs$patient,
+    hm_title = "Patient EWSR1/FLI1 fusion detections",
+    annot = "false positives",
+    hm_cols = hm_cols
+  ),
+  patient_heatmap_VAF = patient_heatmaps_VAF$VAF_annot,
+  patient_heatmap_sread = patient_heatmaps_VAF$sread_annot,
+  dilution_heatmap_FP = longitudinal_dilution_heatmap(
+    fusion_df = fusion_dfs$dilution,
+    hm_title = "Cell line EWSR1/FLI1 fusion detections",
+    annot = "false positives",
+    hm_cols = hm_cols
+  ),
+  dilution_heatmap_VAF = dilution_heatmaps_VAF$VAF_annot,
+  dilution_heatmap_sread = dilution_heatmaps_VAF$sread_annot
 )
-  print(dilution_heatmaps_VAF$VAF_annot)
-dev.off()
 
-png(
-  paste0(plot_dir, "cell_line_fusion_detection_heatmap_supporting_reads_annotated.png"),
-  width = 10,
-  height = 3,
-  unit = "in",
-  res = 300
-)
-  print(dilution_heatmaps_VAF$sread_annot)
-dev.off()
-
+for (i in seq_along(all_heatmaps)) {
+  
+  # convert to grob:
+  hm_grob <- grid.grabExpr(
+    draw(all_heatmaps[[i]], gap = unit(6, "mm"))
+  )
+  dev.off()
+  
+  if (length(grep("patient", names(all_heatmaps)[i])) > 0) {
+    
+    png(
+      paste0(plot_dir, names(all_heatmaps)[i], "_annotated.png"),
+      width = 10,
+      height = 6,
+      unit = "in",
+      res = 300
+    )
+    annot_coord <-  0.41
+    
+  } else {
+    
+    png(
+      paste0(plot_dir, names(all_heatmaps)[i], "_annotated.png"),
+      width = 10,
+      height = 3,
+      unit = "in",
+      res = 300
+    )
+    annot_coord <-  0.37
+    
+  }
+  
+    grid.newpage()
+    
+    pushViewport(viewport(x = 0.027, y = 0.01, width = 0.964, height = 0.89, 
+                          just = c("left", "bottom")))
+      grid.draw(hm_grob)
+    popViewport()
+    
+    if (length(grep("FP", names(all_heatmaps)[i])) > 0) {
+      
+      pushViewport(viewport(x = 0.99, y = annot_coord, width = 0.2, height = 0.1, 
+        just = c("right", "top")))
+      
+        grid.text(
+          "x = No. false positives", 
+          gp=gpar(fontsize=10, fontface="bold", 
+            col=annot_cols[names(annot_cols) == "FP"])
+        )
+      
+      popViewport()
+      
+    } else if (length(grep("VAF", names(all_heatmaps)[i])) > 0) {
+      
+      pushViewport(viewport(x = 0.95, y = annot_coord, width = 0.2, height = 0.1, 
+        just = c("right", "top")))
+        grid.text(
+          "x% = VAF", 
+          gp=gpar(fontsize=10, fontface="bold", 
+            col=annot_cols[names(annot_cols) == "VAF"])
+        )
+      popViewport()
+      
+    } else {
+      
+      pushViewport(viewport(x = 0.995, y = annot_coord, width = 0.2, height = 0.1, 
+        just = c("right", "top")))
+        grid.text(
+          "x = No. supporting reads", 
+          gp=gpar(fontsize=10, fontface="bold", 
+            col=annot_cols[names(annot_cols) == "sread"])
+        )
+      popViewport()
+    }
+  
+  dev.off()
+  
+}
 

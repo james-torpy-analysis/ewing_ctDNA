@@ -46,7 +46,7 @@ longitudinal_heatmap <- function(
       temp_sub <- subset(
         x, 
         select = c(
-          Treatment, Known_EWSR1_FLI1_fusion, Stringent_true_positives, 
+          Treatment, EWSR1_FLI1_fusion_pathology, Stringent_true_positives, 
           Less_stringent_true_positives, Stringent_false_positives,
           Less_stringent_false_positives, VAF, Supporting_read_pairs
         )
@@ -110,7 +110,7 @@ longitudinal_heatmap <- function(
       temp_sub <- subset(
         x, 
         select = c(
-          Dilution, Known_EWSR1_FLI1_fusion, Stringent_true_positives, 
+          Dilution, EWSR1_FLI1_fusion_pathology, Stringent_true_positives, 
           Less_stringent_true_positives, Stringent_false_positives,
           Less_stringent_false_positives, VAF, Supporting_read_pairs
         )
@@ -179,16 +179,18 @@ longitudinal_heatmap <- function(
     m <- match(condition_vec, rownames(merged_df))
     merged_df <- merged_df[m,]
     
-    # record FISH results for first sample:
-    FISH = merged_df$Known_EWSR1_FLI1_fusion[
-      !is.na(merged_df$Known_EWSR1_FLI1_fusion)
+    # record pathology results for first sample:
+    pathology = merged_df$EWSR1_FLI1_fusion_pathology[
+      !is.na(merged_df$EWSR1_FLI1_fusion_pathology)
     ][1]
     
-    # make FISH entries distinct from others and merge with stringent calls:
-    if (FISH == "yes") {
-      FISH <- "FISH_detection"
+    # make pathology entries distinct from others and merge with stringent calls:
+    if (pathology == "yes") {
+      pathology <- "pathology_detection"
+    } else if (pathology == "no") {
+      pathology <- "no_pathology_detection"
     } else {
-      FISH <- "no_FISH_detection"
+      pathology <- "unknown_pathology_detection"
     }
 
     detection_df <- subset(
@@ -197,8 +199,8 @@ longitudinal_heatmap <- function(
     )
     detection_df <- rbind(
       data.frame(
-        row.names = "FISH", Stringent_true_positives = FISH, Less_stringent_true_positives = FISH,
-        Supporting_read_pairs = FISH
+        row.names = "pathology", Stringent_true_positives = pathology, Less_stringent_true_positives = pathology,
+        Supporting_read_pairs = pathology
       ),
       detection_df
     )
@@ -236,7 +238,7 @@ longitudinal_heatmap <- function(
       arrange(
         factor(
           type, levels = c(
-            "FISH", "tumour", "naive", "NACT1", "NACT2", "resection", 
+            "pathology", "tumour", "naive", "NACT1", "NACT2", "resection", 
             "ACT1", "targeted", "relapse", "ACT2"
           )
         )
@@ -255,7 +257,7 @@ longitudinal_heatmap <- function(
         t(data.frame(rep(0, ncol(annot_df))))
       )
       colnames(temp_bind) <- colnames(annot_df)
-      rownames(temp_bind) <- "FISH"
+      rownames(temp_bind) <- "pathology"
       annot_df <- rbind(
         temp_bind,
         annot_df
@@ -291,7 +293,7 @@ longitudinal_heatmap <- function(
         arrange(
           factor(
             type, levels = c(
-              "FISH", "tumour", "naive", "NACT1", "NACT2", "resection", 
+              "pathology", "tumour", "naive", "NACT1", "NACT2", "resection", 
               "ACT1", "targeted", "relapse", "ACT2"
             )
           )
@@ -316,7 +318,7 @@ longitudinal_heatmap <- function(
         t(data.frame(rep(0, ncol(VAF_annot_df))))
       )
       colnames(temp_bind) <- colnames(VAF_annot_df)
-      rownames(temp_bind) <- "FISH"
+      rownames(temp_bind) <- "pathology"
       VAF_annot_df <- rbind(
         temp_bind,
         VAF_annot_df
@@ -334,7 +336,7 @@ longitudinal_heatmap <- function(
         t(data.frame(rep(0, ncol(sread_annot_df))))
       )
       colnames(temp_bind) <- colnames(sread_annot_df)
-      rownames(temp_bind) <- "FISH"
+      rownames(temp_bind) <- "pathology"
       sread_annot_df <- rbind(
         temp_bind,
         sread_annot_df
@@ -350,7 +352,7 @@ longitudinal_heatmap <- function(
           arrange(
             factor(
               type, levels = c(
-                "FISH", "tumour", "naive", "NACT1", "NACT2", "resection", 
+                "pathology", "tumour", "naive", "NACT1", "NACT2", "resection", 
                 "ACT1", "targeted", "relapse", "ACT2"
               )
             )
@@ -387,7 +389,7 @@ longitudinal_heatmap <- function(
       
       if (type == "patient") {
         
-        # format data to order by met and FISH status:
+        # format data to order by met and pathology status:
         hm_df$Patient <- names(hm_split)
         met_status <- data.frame(
           Patient = fusion_df$Patient,
@@ -399,14 +401,14 @@ longitudinal_heatmap <- function(
         # split by primary/met:
         temp_split <- split(hm_df, hm_df$Site)
         
-        if (!all(is.na(hm_df$FISH))) {
+        if (!all(is.na(hm_df$pathology))) {
           temp_split <- lapply(temp_split, function(y) {
             # change all NAs to "unknown":
             y[is.na(y)] <- "unknown"
-            # make FISH column a factor with required order:
-            y$FISH <- factor(y$FISH, levels = c("FISH_detection", "no_FISH_detection", "unknown"))
-            # order each split by FISH column:
-            y <- y[order(y$FISH),]
+            # make pathology column a factor with required order:
+            y$pathology <- factor(y$pathology, levels = c("pathology_detection", "no_pathology_detection", "unknown"))
+            # order each split by pathology column:
+            y <- y[order(y$pathology),]
             return(y)
           })
         }
@@ -452,7 +454,13 @@ longitudinal_heatmap <- function(
     })
     
     # create treatment_split vector:
-    treatment_split <- c("FISH", rep("NOT_FISH", ncol(hm_dfs$detection_df$hm_df) - 1))
+    treatment_split <- factor(
+      c(
+        "pathology", 
+        rep("not_pathology", ncol(hm_dfs$detection_df$hm_df) - 1)
+      ),
+      levels = c("pathology", "not_pathology")
+    )
     
     # create heatmaps:
     if (type == "patient") {
@@ -515,7 +523,7 @@ longitudinal_heatmap <- function(
       
       if (type == "patient") {
         
-        # format data to order by met and FISH status:
+        # format data to order by met and pathology status:
         hm_df$Patient <- names(hm_split)
         met_status <- data.frame(
           Patient = fusion_df$Patient,
@@ -527,14 +535,14 @@ longitudinal_heatmap <- function(
         # split by primary/met:
         temp_split <- split(hm_df, hm_df$Site)
         
-        if (!all(is.na(hm_df$FISH))) {
+        if (!all(is.na(hm_df$pathology))) {
           temp_split <- lapply(temp_split, function(y) {
             # change all NAs to " ":
             y[is.na(y)] <- " "
-            # make FISH column a factor with required order:
-            y$FISH <- factor(y$FISH, levels = c("FISH_detection", "no_FISH_detection", " "))
-            # order each split by FISH column:
-            y <- y[order(y$FISH),]
+            # make pathology column a factor with required order:
+            y$pathology <- factor(y$pathology, levels = c("pathology_detection", "no_pathology_detection", " "))
+            # order each split by pathology column:
+            y <- y[order(y$pathology),]
             return(y)
           })
         }
@@ -558,7 +566,7 @@ longitudinal_heatmap <- function(
         
       } else if (type == "dilution") {
         
-        rownames(hm_df) <- paste0("Cell line sample ", names(hm_split))
+        rownames(hm_df) <- names(hm_split)
         
         return(list(hm_df = hm_df))
         
@@ -600,8 +608,13 @@ longitudinal_heatmap <- function(
     })
 
     # create treatment_split vector:
-    treatment_split <- c("FISH", rep("NOT_FISH", ncol(hm_dfs$detection_df$hm_df) - 1))
-    
+    treatment_split <- factor(
+      c(
+        "pathology", 
+        rep("not_pathology", ncol(hm_dfs$detection_df$hm_df) - 1)
+      ),
+      levels = c("pathology", "not_pathology")
+    )
     # create heatmaps:
     if (type == "patient") {
       

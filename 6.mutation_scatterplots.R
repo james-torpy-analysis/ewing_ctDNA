@@ -75,14 +75,15 @@ roi <- lapply(roi_spl, function(x) {
   )
 })
 
-fetch_sm_vafs <- function(samplename, roi) {
+fetch_sm_vafs <- function(samplename, roi, alt_var) {
   
   # read in variants:
   vcf <- read.table(
-    paste0(variant_path, samplename, "/", samplename, ".smCounter.cut.vcf")
+    paste0(variant_path, samplename, "/", samplename, ".smCounter.anno.vcf")
   )
   
-  # keep only those which passed filtering as gr:
+  # keep only those which passed filtering as gr, and add effect size and 
+  # vaf columns:
   pass_var <- vcf[vcf$V7 == "PASS",]
   pass_gr <- GRanges(
     seqnames = pass_var$V1,
@@ -90,29 +91,42 @@ fetch_sm_vafs <- function(samplename, roi) {
     ref = pass_var$V4,
     alt = pass_var$V5,
     qual = pass_var$V6,
+    effect_size = sapply(strsplit(pass_var$V8, "\\|"), function(x) x[3]),
+    VAF = round(as.numeric(
+      gsub("^.*=", "", sapply(strsplit(pass_var$V8, ";"), function(x) x[6]))
+    )*100, 1),
     info = pass_var$V8
   )
-  
-  # add VAF column:
-  pass_gr$VAF <- round(as.numeric(gsub("^.*=", "", pass_gr$info))*100, 1)
   
   # remove variants with VAF = 100 as likely germline:
   pass_gr <- pass_gr[pass_gr$VAF != 100]
   
-  # keep variant in roi with top quality score:
+  # convert effect size to numeric score:
+  pass_gr$effect_size[pass_gr$effect_size == "HIGH"] <- 3
+  pass_gr$effect_size[pass_gr$effect_size == "MODERATE"] <- 2
+  pass_gr$effect_size[pass_gr$effect_size == "LOW"] <- 1
+  pass_gr$effect_size[pass_gr$effect_size == "MODIFIER"] <- 0
+  
+  # keep variant in roi with highest effect and top quality score:
   top_var <- lapply(roi, function(x) {
+    
+    # keep variants within roi:
     pint <- pintersect(pass_gr, x)
     keep_var <- pint[pint$hit]
-    res <- keep_var[which.max(keep_var$qual)]
+
+    # keep variants with highest effect size:
+    keep_var <- keep_var[which.max(keep_var$effect_size)]
     
-    return(res)
+    # keep best quality variant call:
+    return(keep_var[which.max(keep_var$qual)])      
+    
   })
   
   return(top_var)
 }
 
 # fetch and annotate VAFs:
-sm_vars <- lapply(samplenames, fetch_sm_vafs, roi)
+sm_vars <- lapply(samplenames, fetch_sm_vafs, roi, alt_var)
 names(sm_vars) <- samplenames
 
 # fetch VAF vectors:
@@ -183,37 +197,148 @@ p <- p + geom_text_repel(data=GG_vs_SM_TP53, aes(label=Patient))
 
 png(
   paste0(plot_dir, "GG_TP53_vs_SM_TP53_VAFs.png"),
-  height = 7,
-  width = 10,
+  height = 3.5,
+  width = 5,
   res = 300,
   units = "in")
   print(p)
 dev.off()
 
+# plot GG_STAG2 vs SM_STAG2 VAFs, leaving out samples with unknown results:
+GG_vs_SM_STAG2 <- subset(
+  patient_VAFs, select = c(GG_STAG2_VAF, SM_STAG2_VAF, Treatment, Patient)
+)
+GG_vs_SM_STAG2$Type <- "treated ctDNA"
+GG_vs_SM_STAG2$Type[GG_vs_SM_STAG2$Treatment == "tumour"] <- "gDNA"
+GG_vs_SM_STAG2$Type[GG_vs_SM_STAG2$Treatment == "naive"] <- "untreated ctDNA"
+GG_vs_SM_STAG2 <- GG_vs_SM_STAG2[
+  GG_vs_SM_STAG2$GG_STAG2_VAF != "unknown" & 
+    GG_vs_SM_STAG2$SM_STAG2_VAF != "unknown",
+]
 
+# convert numbers to numeric:
+GG_vs_SM_STAG2$GG_STAG2_VAF <- as.numeric(GG_vs_SM_STAG2$GG_STAG2_VAF)
+GG_vs_SM_STAG2$SM_STAG2_VAF <- as.numeric(GG_vs_SM_STAG2$SM_STAG2_VAF)
 
+p <- ggplot(
+  GG_vs_SM_STAG2, 
+  aes(x = GG_STAG2_VAF, y = SM_STAG2_VAF, color = Treatment)
+)
+p <- p + geom_point(size = 3)
+p <- p + theme_cowplot(12)
+p <- p + ylim(c(0, 100))
+p <- p + xlim(c(0, 100))
+p <- p + ylab("smCounter2 STAG2 VAF")
+p <- p + xlab("GeneGlobe STAG2 VAF")
+p <- p + geom_text_repel(data=GG_vs_SM_STAG2, aes(label=Patient))
+
+png(
+  paste0(plot_dir, "GG_STAG2_vs_SM_STAG2_VAFs.png"),
+  height = 3.5,
+  width = 5,
+  res = 300,
+  units = "in")
+print(p)
+dev.off()
 
 
 ####################################################################################
 ### 2. Plot TP53 vs STAG2 VAFs ###
 ####################################################################################
 
-# plot TP53 vs STAG2 VAFs, leaving out samples with either = 0
-patient_TP53_vs_STAG2 <- subset(
-  patient_VAFs, select = c(GG_TP53_VAF, GG_STAG2_VAF, Treatment)
+# plot TP53 vs STAG2 GG VAFs, leaving out samples with either = 0 or "unknown"
+GG_TP53_vs_STAG2 <- subset(
+  patient_VAFs, select = c(GG_TP53_VAF, GG_STAG2_VAF, Treatment, Patient)
 )
-patient_TP53_vs_STAG2 <- patient_TP53_vs_STAG2[
-  patient_TP53_vs_STAG2$GG_TP53_VAF != 0 & patient_TP53_vs_STAG2$GG_STAG2_VAF != 0,
+GG_TP53_vs_STAG2 <- GG_TP53_vs_STAG2[
+  GG_TP53_vs_STAG2$GG_TP53_VAF != 0 & 
+  GG_TP53_vs_STAG2$GG_STAG2_VAF != 0 &
+  GG_TP53_vs_STAG2$GG_TP53_VAF != "unknown" & 
+  GG_TP53_vs_STAG2$GG_STAG2_VAF != "unknown",
 ]
 
+# convert to numeric values:
+GG_TP53_vs_STAG2$GG_TP53_VAF <- as.numeric(
+  GG_TP53_vs_STAG2$GG_TP53_VAF
+)
+GG_TP53_vs_STAG2$GG_STAG2_VAF <- as.numeric(
+  GG_TP53_vs_STAG2$GG_STAG2_VAF
+)
 
 p <- ggplot(
-  patient_TP53_vs_STAG2, aes(x = GG_TP53_VAF, y = GG_STAG2_VAF, color = Treatment)
+  GG_TP53_vs_STAG2, 
+  aes(x = GG_TP53_VAF, y = GG_STAG2_VAF, color = Treatment)
 )
-p <- p + geom_point()
+p <- p + geom_point(size = 3)
+p <- p + theme_cowplot(12)
+p <- p + ylim(c(0, 100))
+p <- p + xlim(c(0, 100))
+p <- p + ylab("GeneGlobe STAG2 VAF")
+p <- p + xlab("GeneGlobe TP53 VAF")
+p <- p + geom_text_repel(data=GG_TP53_vs_STAG2, aes(label=Patient))
 
-png(paste0(plot_dir, "GG_TP53_vs_GG_STAG2_VAFs.png"))
-print(p)
+png(
+  paste0(plot_dir, "GG_TP53_vs_STAG2_VAFs.png"),
+  height = 3.5,
+  width = 5,
+  res = 300,
+  units = "in")
+  print(p)
+dev.off()
+
+# plot TP53 vs STAG2 SM VAFs, leaving out samples with either = 0
+SM_TP53_vs_STAG2 <- subset(
+  patient_VAFs, select = c(SM_TP53_VAF, SM_STAG2_VAF, Treatment, Patient)
+)
+
+SM_TP53_vs_STAG2 <- SM_TP53_vs_STAG2[
+  SM_TP53_vs_STAG2$SM_TP53_VAF != 0 & 
+    SM_TP53_vs_STAG2$SM_STAG2_VAF != 0 &
+    SM_TP53_vs_STAG2$SM_TP53_VAF != "unknown" & 
+    SM_TP53_vs_STAG2$SM_STAG2_VAF != "unknown",
+]
+
+# calculate correlation between TP53 and STAG2 VAFs:
+plot(hist(SM_TP53_vs_STAG2$SM_TP53_VAF))
+plot(hist(SM_TP53_vs_STAG2$SM_STAG2_VAF))
+dev.off()
+
+corr <- cor.test(
+  x = SM_TP53_vs_STAG2$SM_TP53_VAF, 
+  y = SM_TP53_vs_STAG2$SM_STAG2_VAF,
+  method = "pearson"
+)
+
+# Fit regression line
+require(stats)
+reg <- lm(SM_TP53_VAF ~ SM_STAG2_VAF, data = SM_TP53_vs_STAG2)
+coeff=coefficients(reg)
+
+p <- ggplot(
+  SM_TP53_vs_STAG2, 
+  aes(x = SM_TP53_VAF, y = SM_STAG2_VAF, color = Treatment)
+)
+p <- p + geom_point(size = 3)
+p <- p + theme_cowplot(12)
+p <- p + ylim(c(0, 100))
+p <- p + xlim(c(0, 100))
+p <- p + ylab("smCounter2 STAG2 VAF")
+p <- p + xlab("TP53 VAF")
+p <- p + geom_text_repel(data=SM_TP53_vs_STAG2, aes(label=Patient))
+p <- p + annotate(
+  "text", x = 55, y = 90, 
+  label = paste0(
+    "R2=", round(corr$estimate, 2), ", p=", round(corr$p.value, 3)
+  ), color='red', size = 4
+)
+p <- p + geom_abline(intercept = coeff[1], slope = coeff[2], color = "red")
+
+png(paste0(plot_dir, "SM_TP53_vs_STAG2_VAFs.png"),
+    height = 3.5,
+    width = 5,
+    res = 300,
+    units = "in")
+  print(p)
 dev.off()
 
 
@@ -221,38 +346,113 @@ dev.off()
 ### 2. Plot fusion vs GeneGlobe SNP VAFs ###
 ####################################################################################
 
-
-
-# plot fusion vs TP53 VAFs, leaving out samples with either = 0
-patient_fusion_vs_TP53 <- subset(
-  patient_VAFs, select = c(GG_TP53_VAF, fusion_VAF, Treatment)
+# plot fusion vs TP53 VAFs, leaving out samples with either = 0 or unknown:
+fusion_vs_SM_TP53 <- subset(
+  patient_VAFs, select = c(SM_TP53_VAF, fusion_VAF, Treatment, Patient)
 )
-patient_fusion_vs_TP53 <- patient_fusion_vs_TP53[
-  patient_fusion_vs_TP53$GG_TP53_VAF != 0 & patient_fusion_vs_TP53$fusion_VAF != 0,
+
+fusion_vs_SM_TP53 <- fusion_vs_SM_TP53[
+  fusion_vs_SM_TP53$SM_TP53_VAF != 0 & 
+    fusion_vs_SM_TP53$fusion_VAF != 0 &
+    fusion_vs_SM_TP53$SM_TP53_VAF != "unknown" & 
+    fusion_vs_SM_TP53$fusion_VAF != "unknown",
 ]
 
-p <- ggplot(
-  patient_fusion_vs_TP53, aes(x = fusion_VAF, y = GG_TP53_VAF, color = Treatment)
+# calculate correlation between fusion and TP53 VAFs:
+plot(hist(fusion_vs_SM_TP53$fusion_VAF))
+plot(hist(fusion_vs_SM_TP53$SM_TP53_VAF))
+dev.off()
+
+corr <- cor.test(
+  x = fusion_vs_SM_TP53$SM_TP53_VAF, 
+  y = fusion_vs_SM_TP53$fusion_VAF,
+  method = "pearson"
 )
-p <- p + geom_point()
-png(paste0(plot_dir, "fusion_vs_GG_TP53_VAFs.png"))
+
+# Fit regression line
+require(stats)
+reg <- lm(SM_TP53_VAF ~ fusion_VAF, data = fusion_vs_SM_TP53)
+coeff=coefficients(reg)
+
+p <- ggplot(
+  fusion_vs_SM_TP53, 
+  aes(x = fusion_VAF, y = SM_TP53_VAF, color = Treatment)
+)
+p <- p + geom_point(size = 3)
+p <- p + theme_cowplot(12)
+p <- p + ylim(c(0, 100))
+p <- p + xlim(c(0, 100))
+p <- p + ylab("smCounter2 TP53 VAF")
+p <- p + xlab("fusion VAF")
+p <- p + geom_text_repel(data=fusion_vs_SM_TP53, aes(label=Patient))
+p <- p + annotate(
+  "text", x = 80, y = 85, 
+  label = paste0(
+    "R2=", round(corr$estimate, 2), ", p=", round(corr$p.value, 3)
+  ), color='red', size = 4
+)
+p <- p + geom_abline(intercept = coeff[1], slope = coeff[2], color = "red")
+
+png(paste0(plot_dir, "fusion_vs_SM_TP53_VAFs.png"),
+  height = 3.5,
+  width = 5,
+  res = 300,
+  units = "in")
   print(p)
 dev.off()
 
-# plot fusion vs STAG2 VAFs, leaving out samples with either = 0
-patient_fusion_vs_STAG2 <- subset(
-  patient_VAFs, select = c(GG_STAG2_VAF, fusion_VAF, Treatment)
+# plot fusion vs STAG2 VAFs, leaving out samples with either = 0 or unknown:
+fusion_vs_SM_STAG2 <- subset(
+  patient_VAFs, select = c(SM_STAG2_VAF, fusion_VAF, Treatment, Patient)
 )
-patient_fusion_vs_STAG2 <- patient_fusion_vs_STAG2[
-  patient_fusion_vs_STAG2$GG_STAG2_VAF != 0 & patient_fusion_vs_STAG2$fusion_VAF != 0,
+
+fusion_vs_SM_STAG2 <- fusion_vs_SM_STAG2[
+  fusion_vs_SM_STAG2$SM_STAG2_VAF != 0 & 
+    fusion_vs_SM_STAG2$fusion_VAF != 0 &
+    fusion_vs_SM_STAG2$SM_STAG2_VAF != "unknown" & 
+    fusion_vs_SM_STAG2$fusion_VAF != "unknown",
 ]
+# calculate correlation between fusion and STAG2 VAFs:
+plot(hist(fusion_vs_SM_STAG2$fusion_VAF))
+plot(hist(fusion_vs_SM_STAG2$SM_STAG2_VAF))
+dev.off()
+
+corr <- cor.test(
+  x = fusion_vs_SM_STAG2$SM_STAG2_VAF, 
+  y = fusion_vs_SM_STAG2$fusion_VAF,
+  method = "pearson"
+)
+
+# Fit regression line
+require(stats)
+reg <- lm(SM_STAG2_VAF ~ fusion_VAF, data = fusion_vs_SM_STAG2)
+coeff=coefficients(reg)
 
 p <- ggplot(
-  patient_fusion_vs_STAG2, aes(x = fusion_VAF, y = GG_STAG2_VAF, color = Treatment)
+  fusion_vs_SM_STAG2, 
+  aes(x = fusion_VAF, y = SM_STAG2_VAF, color = Treatment)
 )
-p <- p + geom_point()
-png(paste0(plot_dir, "fusion_vs_GG_STAG2_VAFs.png"))
-  print(p)
+p <- p + geom_point(size = 3)
+p <- p + theme_cowplot(12)
+p <- p + ylim(c(0, 100))
+p <- p + xlim(c(0, 100))
+p <- p + ylab("smCounter2 STAG2 VAF")
+p <- p + xlab("fusion VAF")
+p <- p + geom_text_repel(data=fusion_vs_SM_STAG2, aes(label=Patient))
+p <- p + annotate(
+  "text", x = 80, y = 85, 
+  label = paste0(
+    "R2=", round(corr$estimate, 2), ", p=", round(corr$p.value, 3)
+  ), color='red', size = 4
+)
+p <- p + geom_abline(intercept = coeff[1], slope = coeff[2], color = "red")
+
+png(paste0(plot_dir, "fusion_vs_SM_STAG2_VAFs.png"),
+    height = 3.5,
+    width = 5,
+    res = 300,
+    units = "in")
+print(p)
 dev.off()
 
 
