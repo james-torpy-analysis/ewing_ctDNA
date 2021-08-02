@@ -1,4 +1,21 @@
 
+summary_file_order <- c(
+  "001", "002", "050", "008", "010", 
+  "003", "052", "021", "024", "026", 
+  "028", "055", "004", "051", "005", 
+  "056", "009", "011", "006", "007", 
+  "012", "013", "017", "049", "014", 
+  "060", "015", "016", "054", "018", 
+  "023", "027", "019", "059", "048", 
+  "020", "057", "022", "030", "031", 
+  "062", "025", "058", "061", "063", 
+  "002", "040", "041", "065", "066", 
+  "067", "042", "043", "044", "045", 
+  "046", "047", "001", "032", "033", 
+  "068", "069", "070", "034", "035", 
+  "036", "037", "038", "039"
+)
+
 #home_dir <- "/share/ScratchGeneral/jamtor/"
 home_dir <- "/Users/torpor/clusterHome/"
 project_dir <- paste0(home_dir, "projects/ewing_ctDNA/")
@@ -9,9 +26,11 @@ VAF_dir <- paste0(detection_dir, "/Rdata/")
 variant_path <- paste0(project_dir, "results/smcounter2/")
 
 plot_dir <- paste0(detection_dir, "plots/")
+table_dir <- paste0(detection_dir, "tables/")
 Robject_dir <- paste0(detection_dir, "Rdata/")
 
 system(paste0("mkdir -p ", plot_dir))
+system(paste0("mkdir -p ", table_dir))
 system(paste0("mkdir -p ", Robject_dir))
 
 library(ggplot2)
@@ -27,12 +46,13 @@ library(ggrepel)
 
 # load fusion VAFs:
 fusion_VAFs <- readRDS(paste0(VAF_dir, "all_VAFs.Rdata"))
+rownames(fusion_VAFs) <- fusion_VAFs$Sample
 fusion_VAFs$VAF <- round(fusion_VAFs$VAF*100, 1)
 colnames(fusion_VAFs) <- "fusion_VAF"
 
 # load and add SNP VAFs:
 patient_meta <- read.table(
-  paste0(ref_dir, "/ES_samples_by_patient.txt"),
+  paste0(ref_dir, "/ES_samples_by_patient.tsv"),
   header = T,
   fill = T
 )
@@ -48,6 +68,7 @@ patient_VAFs$GG_TP53_VAF <- gsub("/.*$", "", patient_VAFs$GG_TP53_VAF)
 rownames(patient_VAFs) <- gsub("_.*$", "", 
   gsub("409_", "", patient_VAFs$Sample))
 patient_VAFs <- merge(patient_VAFs, fusion_VAFs, by=0, all = FALSE)
+patient_VAFs <- patient_VAFs[,!is.na(colnames(patient_VAFs))]
 
 ## load smcounter2 SNP VAFs:
 # define samplenames:
@@ -75,11 +96,15 @@ roi <- lapply(roi_spl, function(x) {
   )
 })
 
-fetch_sm_vafs <- function(samplename, roi, alt_var) {
+fetch_sm_vafs <- function(sample_df, roi, alt_var) {
+  
+  print(sample_df)
   
   # read in variants:
   vcf <- read.table(
-    paste0(variant_path, samplename, "/", samplename, ".smCounter.anno.vcf")
+    paste0(
+      variant_path, sample_df$Sample, "/", sample_df$Sample, 
+      ".smCounter.anno.vcf")
   )
   
   # keep only those which passed filtering as gr, and add effect size and 
@@ -98,8 +123,14 @@ fetch_sm_vafs <- function(samplename, roi, alt_var) {
     info = pass_var$V8
   )
   
-  # remove variants with VAF = 100 as likely germline:
-  pass_gr <- pass_gr[pass_gr$VAF != 100]
+  if (sample_df$Treatment == "tumour") {
+    # remove tumour gDNA variants with VAF == 100 as likely germline:
+    pass_gr <- pass_gr[pass_gr$VAF != 100]
+  } else {
+    # remove ctDNA variants with VAF > 95 as likely germline:
+    pass_gr <- pass_gr[pass_gr$VAF <= 95]
+  }
+  
   
   # convert effect size to numeric score:
   pass_gr$effect_size[pass_gr$effect_size == "HIGH"] <- 3
@@ -125,9 +156,12 @@ fetch_sm_vafs <- function(samplename, roi, alt_var) {
   return(top_var)
 }
 
+# add Treatment information to samplenames:
+sample_dfs <- split(subset(patient_VAFs, select = c(Sample, Treatment)), patient_VAFs$Sample)
+
 # fetch and annotate VAFs:
-sm_vars <- lapply(samplenames, fetch_sm_vafs, roi, alt_var)
-names(sm_vars) <- samplenames
+sm_vars <- lapply(sample_dfs, fetch_sm_vafs, roi, alt_var)
+names(sm_vars) <- patient_VAFs$Sample
 
 # fetch VAF vectors:
 TP53_VAF <- unlist(lapply(sm_vars, function(x) x$TP53$VAF))
@@ -161,6 +195,30 @@ patient_VAFs <- patient_VAFs[!(is.na(patient_VAFs$Patient)),]
 # make NA values = 0:
 patient_VAFs$SM_TP53_VAF[is.na(patient_VAFs$SM_TP53_VAF)] <- 0
 patient_VAFs$SM_STAG2_VAF[is.na(patient_VAFs$SM_STAG2_VAF)] <- 0
+
+# write table:
+colnames(patient_VAFs)[1] <- "ID"
+write.table(
+  patient_VAFs, 
+  paste0(table_dir, "patient_VAFs.tsv"),
+  sep = "\t",
+  quote = F,
+  row.names = F,
+  col.names = T)
+
+# order for summary file:
+summary_file_order <- summary_file_order[
+  summary_file_order %in% patient_VAFs$ID]
+patient_VAFs <- patient_VAFs[match(summary_file_order, patient_VAFs$ID),]
+
+# write table:
+write.table(
+  patient_VAFs, 
+  paste0(table_dir, "patient_VAFs_summary_order.tsv"),
+  sep = "\t",
+  quote = F,
+  row.names = F,
+  col.names = T)
 
 
 ####################################################################################

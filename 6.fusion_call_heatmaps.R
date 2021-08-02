@@ -229,7 +229,7 @@ dilution_heatmaps_VAF <- longitudinal_dilution_heatmap(
 )
 
 all_heatmaps <- list(
-  patient_heatmap_FP = longitudinal_heatmap(
+  patient_heatmap_FP = longitudinal_patient_heatmap(
     fusion_df = fusion_dfs$patient,
     hm_title = "Patient EWSR1/FLI1 fusion detections",
     annot = "false positives",

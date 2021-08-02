@@ -4,7 +4,7 @@ args = commandArgs(trailingOnly=TRUE)
 projectname <- args[1]
 samplename <- args[2]
 #projectname <- "ewing_ctDNA"
-#samplename <- "409_008_DB62M_GTAGAGGA-CTCTCTAT_L001"
+#samplename <- "409_021_DBV4V_CTCTCTAC-CTCTCTAT_L001"
 
 home_dir <- "/share/ScratchGeneral/jamtor/"
 #home_dir <- "/Users/torpor/clusterHome/"
@@ -92,7 +92,7 @@ mcols(tmp) <- NULL
 R2 <- split(tmp, names(tmp))
 
 # save as RDS:
-saveRDS(list(R1=R1, R2=R2), paste0(Robject_dir, "filtered_reads.Rdata"))
+saveRDS(gr, paste0(Robject_dir, "filtered_reads.Rdata"))
 
 
 ## 2) read fusion information
