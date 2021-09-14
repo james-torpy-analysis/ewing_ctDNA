@@ -10,8 +10,8 @@
 # define and create directories:
 sample_name=$1
 capture_id=$2
-sample_name="409_029_DCB8V_CGAGGCTG-CTCTCTAT_L001"
-capture_id="CDHS-34925Z-409"
+#sample_name="409_057_DCKVC_TCCTGAGC-CTCTCTAT_L001"
+#capture_id="CDHS-34925Z-409"
 
 home_dir="/share/ScratchGeneral/jamtor"
 project_dir="$home_dir/projects/ewing_ctDNA"

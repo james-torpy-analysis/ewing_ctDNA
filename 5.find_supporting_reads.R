@@ -6,7 +6,7 @@ samplename <- args[2]
 min_overlap_R1 <- args[3]
 min_overlap_R2 <- args[4]
 #projectname <- "ewing_ctDNA"
-#samplename <- "409_001_D9YW9_TCCTGAGC-CTCTCTAT_L001"
+#samplename <- "409_010_DB62M_ATCTCAGG-CTCTCTAT_L001"
 #min_overlap_R1 <- 19
 #min_overlap_R2 <- 19
 
@@ -22,8 +22,12 @@ library(GenomicAlignments)
 
 # load filtered reads:
 freads <- readRDS(paste0(in_dir, "filtered_reads.Rdata"))
-R1 <- freads$R1
-R2 <- freads$R2
+tmp  <- freads[mcols(freads)$R1]
+mcols(tmp) <- NULL
+R1 <- split(tmp, names(tmp))
+tmp  <- freads[mcols(freads)$R2]
+mcols(tmp) <- NULL
+R2 <- split(tmp, names(tmp))
 
 # define ROI:
 ROI <- list(

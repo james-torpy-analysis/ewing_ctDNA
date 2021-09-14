@@ -20,6 +20,7 @@ summary_file_order <- c(
 home_dir <- "/Users/torpor/clusterHome/"
 project_dir <- paste0(home_dir, "projects/ewing_ctDNA/")
 ref_dir <- paste0(project_dir, "refs/")
+func_dir <- paste0(project_dir, "scripts/functions/")
 
 detection_dir <- paste0(project_dir, "results/detection_heatmaps/")
 VAF_dir <- paste0(detection_dir, "/Rdata/")
@@ -38,6 +39,8 @@ library(GenomicAlignments)
 library(tibble)
 library(cowplot)
 library(ggrepel)
+
+fetch_sm_vafs <- dget(paste0(func_dir, "fetch_sm_vafs.R"))
 
 
 ####################################################################################
@@ -96,81 +99,22 @@ roi <- lapply(roi_spl, function(x) {
   )
 })
 
-fetch_sm_vafs <- function(sample_df, roi, alt_var) {
-  
-  print(sample_df)
-  
-  # read in variants:
-  vcf <- read.table(
-    paste0(
-      variant_path, sample_df$Sample, "/", sample_df$Sample, 
-      ".smCounter.anno.vcf")
-  )
-  
-  # keep only those which passed filtering as gr, and add effect size and 
-  # vaf columns:
-  pass_var <- vcf[vcf$V7 == "PASS",]
-  pass_gr <- GRanges(
-    seqnames = pass_var$V1,
-    ranges = IRanges(start = pass_var$V2, end = pass_var$V2),
-    ref = pass_var$V4,
-    alt = pass_var$V5,
-    qual = pass_var$V6,
-    effect_size = sapply(strsplit(pass_var$V8, "\\|"), function(x) x[3]),
-    VAF = round(as.numeric(
-      gsub("^.*=", "", sapply(strsplit(pass_var$V8, ";"), function(x) x[6]))
-    )*100, 1),
-    info = pass_var$V8
-  )
-  
-  if (sample_df$Treatment == "tumour") {
-    # remove tumour gDNA variants with VAF == 100 as likely germline:
-    pass_gr <- pass_gr[pass_gr$VAF != 100]
-  } else {
-    # remove ctDNA variants with VAF > 95 as likely germline:
-    pass_gr <- pass_gr[pass_gr$VAF <= 95]
-  }
-  
-  
-  # convert effect size to numeric score:
-  pass_gr$effect_size[pass_gr$effect_size == "HIGH"] <- 3
-  pass_gr$effect_size[pass_gr$effect_size == "MODERATE"] <- 2
-  pass_gr$effect_size[pass_gr$effect_size == "LOW"] <- 1
-  pass_gr$effect_size[pass_gr$effect_size == "MODIFIER"] <- 0
-  
-  # keep variant in roi with highest effect and top quality score:
-  top_var <- lapply(roi, function(x) {
-    
-    # keep variants within roi:
-    pint <- pintersect(pass_gr, x)
-    keep_var <- pint[pint$hit]
-
-    # keep variants with highest effect size:
-    keep_var <- keep_var[which.max(keep_var$effect_size)]
-    
-    # keep best quality variant call:
-    return(keep_var[which.max(keep_var$qual)])      
-    
-  })
-  
-  return(top_var)
-}
-
 # add Treatment information to samplenames:
-sample_dfs <- split(subset(patient_VAFs, select = c(Sample, Treatment)), patient_VAFs$Sample)
+sample_dfs <- split(subset(patient_VAFs, select = c(Sample, Treatment)), 
+  patient_VAFs$Sample )
 
 # fetch and annotate VAFs:
 sm_vars <- lapply(sample_dfs, fetch_sm_vafs, roi, alt_var)
 names(sm_vars) <- patient_VAFs$Sample
 
 # fetch VAF vectors:
-TP53_VAF <- unlist(lapply(sm_vars, function(x) x$TP53$VAF))
-TP53_VAF <- data.frame(
-  row.names = gsub(
-    "_.*$", "", gsub("409_", "", names(TP53_VAF))
-  ),
-  SM_TP53_VAF = TP53_VAF
+TP53_VAF <- lapply(sm_vars, function(x) {
+  data.frame(SM_TP53_VAF = x$TP53$VAF, effect_size = x$TP53$effect_size) })
+TP53_VAF <- do.call("rbind", TP53_VAF)
+rownames(TP53_VAF) <- gsub(
+  "_.*$", "", gsub("409_", "", rownames(TP53_VAF))
 )
+
 STAG2_VAF <- unlist(lapply(sm_vars, function(x) x$STAG2$VAF))
 STAG2_VAF <- data.frame(
   row.names = gsub(
