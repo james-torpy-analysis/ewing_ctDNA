@@ -2,12 +2,12 @@
 args = commandArgs(trailingOnly=TRUE)
 
 samplename <- args[1]
-#samplename <- "409_027_DCKVC_TAGGCATG-CTCTCTAT_L001"
+#samplename <- "409_001_D9YW9_TCCTGAGC-CTCTCTAT_L001"
 
 home_dir <- "/share/ScratchGeneral/jamtor/"
 #home_dir <- "/Users/torpor/clusterHome/"
 project_dir <- paste0(home_dir, "projects/ewing_ctDNA/")
-in_dir <- paste0(project_dir, "results/svaba/BWA_and_picard/", samplename, "/")
+in_dir <- paste0(project_dir, "results/svaba/picard/", samplename, "/")
 non_collapsed_dir <- paste0(project_dir, "results/svaba/non_collapsed/", samplename, "/")
 
 func_dir <- paste0(project_dir, "scripts/functions/")
@@ -29,9 +29,6 @@ library(ComplexHeatmap)
 
 load_breakpoints <- dget(paste0(func_dir, "load_breakpoints.R"))
 find_EWSR1_FLI1_fusions <- dget(paste0(func_dir, "find_EWSR1_FLI1_fusions.R"))
-longitudinal_heatmap <- dget(
-  paste0(func_dir, "longitudinal_heatmap.R")
-)
 
 #if (!file.exists(paste0(Robject_dir, "EWSR1_GOI_fusions.Rdata"))) {
   

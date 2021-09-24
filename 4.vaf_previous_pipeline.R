@@ -3,15 +3,15 @@ args = commandArgs(trailingOnly=TRUE)
 
 projectname <- args[1]
 samplename <- args[2]
-#projectname <- "ewing_ctDNA"
-#samplename <- "409_001_D9YW9_TCCTGAGC-CTCTCTAT_L001" 
+projectname <- "ewing_ctDNA"
+samplename <- "409_001_D9YW9_TCCTGAGC-CTCTCTAT_L001" 
 
 home_dir <- "/share/ScratchGeneral/jamtor/"
 #home_dir <- "/Users/torpor/clusterHome/"
 project_dir <- paste0(home_dir, "projects/", projectname, "/")
 func_dir <- paste0(project_dir, "scripts/functions/")
-result_dir <- paste0(project_dir, "results/")
-bam_dir <- paste0(result_dir, "picard/")
+result_dir <- paste0(project_dir, "results_200821/")
+bam_dir <- paste0(result_dir, "BWA_and_picard/bams/")
 fusion_dir <- paste0(result_dir, "fusions/", samplename, "/")
 out_path <- paste0(result_dir, "VAF_calculation/", samplename, "/")
 
@@ -38,7 +38,7 @@ min_overlap_R2 <- 19
 
 file_bam <- paste0(
     bam_dir,
-    samplename, "/", samplename, ".dedup.sorted.by.coord.bam" )
+    samplename, "/", samplename, ".consensus.bam" )
 
 what <- c(
     "qname",
@@ -231,12 +231,15 @@ if (length(fusions) >= 1) {
     
     if (i==1) {
       VAFs <- list(
-        data.frame(VAF_fwd, VAF_rev)
+        data.frame(VAF_fwd, VAF_rev, length(supp_fwd), length(supp_rev))
       )
+      VAFs[[i]]$supp_total <- VAFs[[i]]$length.supp_fwd. + VAFs[[i]]$length.supp_rev.
     } else {
-      VAFs[[i]] <- data.frame(VAF_fwd, VAF_rev)
+      VAFs[[i]] <- data.frame(VAF_fwd, VAF_rev, length(supp_fwd), length(supp_rev))
+      VAFs[[i]]$supp_total <- VAFs[[i]]$length.supp_fwd. + VAFs[[i]]$length.supp_rev.
     }
     names(VAFs)[i] <- paste0("fusion_", fusions[i]$join_coord)
+
     
     ## write reads to SAM for inspection
     writeSam(file_bam, nonsupp_fwd, paste0(out_bam_dir, "/reads_", breakpoint, "_nonsupp_fwd.sam"))

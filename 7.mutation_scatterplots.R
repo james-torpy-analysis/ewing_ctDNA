@@ -49,7 +49,7 @@ fetch_sm_vafs <- dget(paste0(func_dir, "fetch_sm_vafs.R"))
 
 # load fusion VAFs:
 fusion_VAFs <- readRDS(paste0(VAF_dir, "all_VAFs.Rdata"))
-rownames(fusion_VAFs) <- fusion_VAFs$Sample
+#rownames(fusion_VAFs) <- fusion_VAFs$Sample - where are sample names?!
 fusion_VAFs$VAF <- round(fusion_VAFs$VAF*100, 1)
 colnames(fusion_VAFs) <- "fusion_VAF"
 
@@ -64,7 +64,7 @@ colnames(patient_meta) <- gsub("TP53", "GG_TP53", colnames(patient_meta))
 colnames(patient_meta) <- gsub("STAG2", "GG_STAG2", colnames(patient_meta))
 patient_VAFs <- subset(
   patient_meta, select = c(
-    "Patient", "Sample", "Treatment", "GG_TP53_VAF", "GG_STAG2_VAF"
+    Patient, Sample, Treatment, GG_TP53_VAF, GG_STAG2_VAF
   )
 )
 patient_VAFs$GG_TP53_VAF <- gsub("/.*$", "", patient_VAFs$GG_TP53_VAF)
