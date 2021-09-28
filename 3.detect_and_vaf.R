@@ -4,7 +4,7 @@ args = commandArgs(trailingOnly=TRUE)
 projectname <- args[1]
 samplename <- args[2]
 #projectname <- "ewing_ctDNA"
-#samplename <- "409_001_D9YW9_TCCTGAGC-CTCTCTAT_L001" 
+#samplename <- "409_010_DB62M_ATCTCAGG-CTCTCTAT_L001" 
 
 home_dir <- "/share/ScratchGeneral/jamtor/"
 #home_dir <- "/Users/torpor/clusterHome/"
@@ -94,44 +94,101 @@ R2 <- split(tmp, names(tmp))
 saveRDS(gr, paste0(Robject_dir, "filtered_reads.Rdata"))
 
 
-## 2) read fusion information
 
-# load in fusions:
-both_fusions <- readRDS(paste0(fusion_dir, "EWSR1_GOI_fusions.Rdata"))
 
-# annotate high and low confidence breakpoints:
-try(both_fusions$high_conf_bp$true_positives$fusions$FLI1$conf <- "high")
-try(both_fusions$low_conf_bp$true_positives$fusions$FLI1$conf <- "low")
 
-# merge high confidence and low confidence breakpoints:
-fusions <- c(
-  both_fusions$high_conf_bp$true_positives$fusions$FLI1, 
-  both_fusions$low_conf_bp$true_positives$fusions$FLI1)
+
+
+## 2) detect fusions
+
+## load in fusions:
+#both_fusions <- readRDS(paste0(fusion_dir, "EWSR1_GOI_fusions.Rdata"))
+#
+## annotate high and low confidence breakpoints:
+#try(both_fusions$high_conf_bp$true_positives$fusions$FLI1$conf <- "high")
+#try(both_fusions$low_conf_bp$true_positives$fusions$FLI1$conf <- "low")
+#
+## merge high confidence and low confidence breakpoints:
+#fusions <- c(
+#  both_fusions$high_conf_bp$true_positives$fusions$FLI1, 
+#  both_fusions$low_conf_bp$true_positives$fusions$FLI1)
+
+# define EWSR1 and FLI1 grs:
+gr_ewsr1 <- GRanges(
+  seqnames = "chr22",
+  ranges = IRanges(start = 29664257, end = 29696511),
+  strand = "*" )
+gr_fli1 <- GRanges(
+  seqnames = "chr11",
+  ranges = IRanges(start = 128556430, end = 128683162),
+  strand = "*" )
+
+# find fusion supporting split R1s:
+split_R1 <- R1[lengths(range(R1)) == 2L]
+
+######
+### new code ###
+del_R1 <- sapply(split_R1, function (x) {
+  i_ewsr1 <- which(x %over% gr_ewsr1)
+  i_fli1 <- which(x %over% gr_fli1)
+  if (length(i_ewsr1) == 0 || length(i_fli1) == 0) {
+      return()
+  } else {
+    paste(
+        as.character(flank(x[i_ewsr1], 1, FALSE)), 
+        as.character(flank(x[i_fli1], 1, TRUE)) )
+  }
+})
+del_R1 <- unlist(del_R1)
+
+# find fusion supporting split R2s:
+split_R2 <- R2[lengths(range(R2)) == 2L]
+del_R2 <- sapply(split_R2, function (x) {
+  i_ewsr1 <- which(x %over% gr_ewsr1)
+  i_fli1 <- which(x %over% gr_fli1)
+  if (length(i_ewsr1) == 0 || length(i_fli1) == 0) {
+      return()
+  } else {
+    paste(
+        as.character(flank(x[i_ewsr1], 1, TRUE)),
+        as.character(flank(x[i_fli1], 1, FALSE)) )
+  }
+})
+del_R2 <- unlist(del_R2)
+
+# keep only unique fusions:
+fusion_list <- as.list(unique(c(gsub(":\\+|:\\-", ":\\*", del_R1), gsub(":\\+|:\\-", ":\\*", del_R2))))
+fusions <- lapply(fusion_list, function(x) {
+  spl <- strsplit(x, " ")[[1]]
+  fusion_gr <- as(spl[1], "GRanges")
+  spl2 <- strsplit(spl[2], ":")[[1]]
+  fusion_gr$join_chr <- spl2[1]
+  fusion_gr$join_coord <- as.numeric(spl2[2])
+  return(fusion_gr)
+})
+fusions <- unlist(as(fusions, "GRangesList"))
+
+######
+
 
 if (length(fusions) >= 1) {
-  # remove duplicates:
-  fusions <- fusions[
-    !duplicated(start(fusions)) & !duplicated(fusions$join_coord)
-  ]
   
-  ## need to add orientation for identified translocations
-  ## if not output by SVABA, can infer from gene annotation
-  ## i.e. driver translocation in sense orientation for EWSR1 and fusion partner
+  ## add orientation for identified translocations
   strand(fusions) <- "+"
   mcols(fusions)$join_strand <- "+"
   
   for (i in seq_along(fusions)) {
     
     fusion <- fusions[i]
-    
-    gene_a_breakpoint <- GRanges(
+
+    gene_a_breakpoint <- fusion    
+    gene_b_breakpoint <- GRanges(
       fusion$join_chr,
       IRanges(
         fusion$join_coord,
         fusion$join_coord),
       fusion$join_strand)
-    gene_b_breakpoint <- fusion
-    mcols(gene_b_breakpoint) <- NULL
+    mcols(gene_a_breakpoint) <- NULL
     
     breakpoint <- gsub(":", "_", as.character(gene_a_breakpoint), fixed = TRUE)
     print(breakpoint)
@@ -192,7 +249,6 @@ if (length(fusions) >= 1) {
       names(which(sum(width(pintersect(R2, gene_b_upstream))) >= min_overlap_R2)))
     
     ## diagnost plots for overlap
-    
     R1_nonsupp_rev <- R1[which(names(R1) %in% nonsupp_rev)]
     R2_nonsupp_rev <- R2[which(names(R2) %in% nonsupp_rev)]
     R1_supp_rev <- R1[which(names(R1) %in% supp_rev)]
@@ -209,13 +265,11 @@ if (length(fusions) >= 1) {
     try(
       hist(-sum(width(pintersect(R2_supp_rev, gene_b_upstream))),
            xlim = c(-180, 0), xlab = "Overlap [bp]",
-           main = "reciproc supporting FLI1 upstream")
-    )
+           main = "reciproc supporting FLI1 upstream"), silent = TRUE )
     try(
       hist(sum(width(pintersect(R1_supp_rev, gene_a_dnstream_rev))),
            xlim = c(0, 180), xlab = "Overlap [bp]",
-           main = "reciproc supporting EWSR1 dnstream")
-    )
+           main = "reciproc supporting EWSR1 dnstream"), silent = TRUE )
     dev.off()
     
     ## calculate VAFs for both translocations
@@ -236,7 +290,16 @@ if (length(fusions) >= 1) {
     } else {
       VAFs[[i]] <- data.frame(VAF_fwd, VAF_rev)
     }
-    names(VAFs)[i] <- paste0("fusion_", fusions[i]$join_coord)
+    names(VAFs)[i] <- paste0("fusion_", start(fusions[i]))
+
+    VAFs[[i]]$Fusion <- paste0(
+      gsub(":\\+", "-", as.character(fusion)), fusion$join_chr, ":", fusion$join_coord )
+    VAFs[[i]]$Forward_supporting <- length(supp_fwd)
+    VAFs[[i]]$Forward_non_supporting <- length(nonsupp_fwd)
+    VAFs[[i]]$Forward_total <- VAFs[[i]]$Forward_supporting + VAFs[[i]]$Forward_non_supporting
+    VAFs[[i]]$Reverse_supporting <- length(supp_rev)
+    VAFs[[i]]$Reverse_non_supporting <- length(nonsupp_rev)
+    VAFs[[i]]$Reverse_total <- VAFs[[i]]$Reverse_supporting + VAFs[[i]]$Reverse_non_supporting
     
     ## write reads to SAM for inspection
     writeSam(file_bam, nonsupp_fwd, paste0(out_bam_dir, "/reads_", breakpoint, "_nonsupp_fwd.sam"))
@@ -248,9 +311,11 @@ if (length(fusions) >= 1) {
   
   save.image(paste0(Robject_dir, "VAFs_calculated.Rdata"))
   
-  # add fusion confidences to and write VAFs
+  # write VAFs as df:
   VAF_df <- do.call("rbind", VAFs)
-  VAF_df$conf <- fusions$conf
+
+  # order by forward supporting read number:
+  VAF_df <- VAF_df[order(VAF_df$Forward_supporting),]
   
   write.table(
     VAF_df,
