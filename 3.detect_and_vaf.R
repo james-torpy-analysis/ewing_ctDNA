@@ -4,7 +4,7 @@ args = commandArgs(trailingOnly=TRUE)
 projectname <- args[1]
 samplename <- args[2]
 #projectname <- "ewing_ctDNA"
-#samplename <- "409_010_DB62M_ATCTCAGG-CTCTCTAT_L001" 
+#samplename <- "409_008_DB62M_GTAGAGGA-CTCTCTAT_L001" 
 
 home_dir <- "/share/ScratchGeneral/jamtor/"
 #home_dir <- "/Users/torpor/clusterHome/"
@@ -92,11 +92,6 @@ R2 <- split(tmp, names(tmp))
 
 # save as RDS:
 saveRDS(gr, paste0(Robject_dir, "filtered_reads.Rdata"))
-
-
-
-
-
 
 
 ## 2) detect fusions
@@ -319,16 +314,17 @@ if (length(fusions) >= 1) {
   
   write.table(
     VAF_df,
-    paste0(out_path, "VAFs.tsv"),
+    paste0(out_path, "VAF.tsv"),
     sep = "\t",
     quote = F,
     row.names = T,
     col.names = T)
   
-  saveRDS(VAF_df, paste0(Robject_dir, "VAFs.Rdata"))
+  saveRDS(VAF_df, paste0(Robject_dir, "VAF.rds"))
 } else {
-  # create dummy file for snakemake:
-  system(paste0("touch ", Robject_dir, "VAFs.Rdata"))
+  ## create output file for snakemake
+    VAF <- NULL
+    saveRDS(VAF, paste0(Robject_dir, "/VAF.rds"))
 }
 
 
