@@ -1,4 +1,4 @@
-fetch_sm_vafs <- function(sample_df, roi) {
+fetch_sm_vafs <- function(sample_df, roi, reverse_strand = FALSE) {
   
   library(plyr)
   print(sample_df$Library_id)
@@ -22,6 +22,9 @@ fetch_sm_vafs <- function(sample_df, roi) {
     # keep only those which passed filtering as gr, and add effect size and 
     # vaf columns:
     pass_var <- vcf[vcf$V7 == "PASS",]
+
+    # convert to granges:
+
     pass_gr <- GRanges(
       seqnames = pass_var$V1,
       ranges = IRanges(start = pass_var$V2, end = pass_var$V2),
@@ -29,8 +32,13 @@ fetch_sm_vafs <- function(sample_df, roi) {
       alt = pass_var$V5,
       qual = pass_var$V6,
       effect_size = sapply(strsplit(pass_var$V8, "\\|"), function(x) x[3]),
+      UMT = gsub("^.*=", "", 
+        gsub(",.*$", "", sapply(strsplit(pass_var$V8, ";"), function(x) x[4])) ),
+      VMT = gsub("^.*=", "", 
+        gsub(",.*$", "", sapply(strsplit(pass_var$V8, ";"), function(x) x[5])) ),
       VAF = round(as.numeric(
-        gsub("^.*=", "", gsub(",.*$", "", sapply(strsplit(pass_var$V8, ";"), function(x) x[6])))
+        gsub("^.*=", "", 
+          gsub(",.*$", "", sapply(strsplit(pass_var$V8, ";"), function(x) x[6])) )
       )*100, 1),
       info = pass_var$V8
     )
@@ -65,6 +73,12 @@ fetch_sm_vafs <- function(sample_df, roi) {
     # change effect size back:
     top_var$effect_size <- revalue(as.character(keep_var$effect_size), 
       c("3" = "HIGH", "2" = "MODERATE", "1" = "LOW", "0" = "MODIFIER" ) )
+
+    # if reverse strand, convert nucleotides:
+    if (reverse_strand) {
+      top_var$ref <- chartr("ATGC","TACG", top_var$ref)
+      top_var$alt <- chartr("ATGC","TACG", top_var$alt)
+    }
     
     # keep best quality variant call:
     if (length(top_var) > 0) {
@@ -81,6 +95,8 @@ fetch_sm_vafs <- function(sample_df, roi) {
         alt = "not_detected",
         qual = "not_detected",
         effect_size = "not_detected",
+        UMT = "not_detected",
+        VMT = "not_detected",
         VAF = "not_detected" ))
     }
   } else {
@@ -94,6 +110,8 @@ fetch_sm_vafs <- function(sample_df, roi) {
         alt = "not_detected",
         qual = "not_detected",
         effect_size = "not_detected",
+        UMT = "not_detected",
+        VMT = "not_detected",
         VAF = "not_detected" ))
   }
 

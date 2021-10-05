@@ -35,31 +35,19 @@ summary_df <- read.table(
 
 VAFs <- lapply(summary_df$Library_id, function(x) {
   print(x)
-  VAF <- as.data.frame(readRDS(file.path(in_path, x, "Rdata/VAFs.Rdata")))
+  VAF <- as.data.frame(readRDS(file.path(in_path, x, "Rdata/VAF.rds")))
   if (!is.null(VAF)) {
     if (nrow(VAF) > 0) {
-      VAF <- VAF[order(VAF$total_supp, decreasing = T),]
+      VAF <- VAF[order(VAF$Forward_supporting, decreasing = T),]
       VAF$Library_id <- rep(x, nrow(VAF))
-      VAF$up_VAF <- round(as.numeric(VAF$up_VAF), 4)
-      VAF$dn_VAF <- round(as.numeric(VAF$dn_VAF), 4)
-      VAF$avg_VAF <- round(as.numeric(VAF$avg_VAF), 4)
+      VAF$VAF_fwd <- round(as.numeric(VAF$VAF_fwd), 4)
     } else {
       VAF <- data.frame(
-        seqnames = "not_detected",
-        start = "not_detected",
-        end = "not_detected",
-        width = "not_detected",
-        strand = "not_detected",
-        bp_A_supp = "not_detected",
-        bp_A_non_supp = "not_detected",
-        bp_A_total = "not_detected",
-        bp_B_supp = "not_detected",
-        bp_B_non_supp = "not_detected",
-        bp_B_total = "not_detected",
-        total_supp = "not_detected",
-        up_VAF = "not_detected",
-        dn_VAF = "not_detected",
-        avg_VAF = "not_detected",
+        VAF_fwd = "not_detected",
+        Fusion = "not_detected",
+        Forward_supporting = "not_detected",
+        Forward_non_supporting = "not_detected",
+        Forward_total = "not_detected",
         Library_id = x
       )
       rownames(VAF) <- x
@@ -69,11 +57,8 @@ VAFs <- lapply(summary_df$Library_id, function(x) {
 })
 
 VAF_df <- do.call("rbind", VAFs)
-
-VAF_df$deletion <- paste0(VAF_df$seqnames, ":", VAF_df$start, "-", VAF_df$end)
-VAF_df$deletion[grep("not_detected", VAF_df$deletion)] <- "not_detected"
-VAF_df <- subset(VAF_df, select = c(Library_id, deletion, up_VAF, dn_VAF, avg_VAF, 
-  bp_A_supp, bp_A_non_supp, bp_A_total, bp_B_supp, bp_B_non_supp, bp_B_total, total_supp ) )
+VAF_df <- subset(VAF_df, select = c(Library_id, Fusion, VAF_fwd,
+  Forward_supporting, Forward_non_supporting, Forward_total ) )
 
 
 ####################################################################################
@@ -84,36 +69,47 @@ VAF_df <- subset(VAF_df, select = c(Library_id, deletion, up_VAF, dn_VAF, avg_VA
 all_VAFs <- merge(summary_df, VAF_df, by="Library_id")
 
 all_VAFs <- subset(all_VAFs, select = c(
-  Patient_id, Sample_id, Library_id, Treatment, Sanger_SNV, 
-  smCounter2_SNV, ddPCR_SNV_VAF, GeneGlobe_SNV_VAF, smCounter2_VAF, 
-  smCounter2_effect_size, Sanger_deletion, Andre_deletion, 
-  Andre_deletion_confidence, deletion, 
-  ddPCR_deletion_VAF, Andre_deletion_VAF, avg_VAF, 
-  up_VAF, dn_VAF, bp_A_supp, 
-  bp_A_non_supp, bp_A_total, bp_B_supp, 
-  bp_B_non_supp, bp_B_total, total_supp ))
+  Patient_id, Sample_id, Library_id, Site, Treatment.dilution, 
+  Sanger_TP53_SNV, TP53_SNV_type, smCounter2_TP53_SNV, ddPCR_TP53_VAF, 
+  GeneGlobe_TP53_VAF, smCounter2_TP53_VAF, smCounter2_TP53_effect_size,
+  smCounter2_TP53_UMT, smCounter2_TP53_VMT, smCounter2_TP53_qual, 
+  Sanger_STAG2_SNV, smCounter2_STAG2_SNV, ddPCR_STAG2_VAF, 
+  GeneGlobe_STAG2_VAF, smCounter2_STAG2_VAF, smCounter2_STAG2_effect_size,
+  smCounter2_STAG2_UMT, smCounter2_STAG2_VMT, smCounter2_STAG2_qual, 
+  Pathology_EWSR1_FLI1, Fusion, VAF_fwd,
+  Forward_supporting, Forward_non_supporting, Forward_total ))
+
+# convert fusion VAFs to percentages:
+all_VAFs$VAF_fwd[all_VAFs$VAF_fwd != "not_detected"] <- 
+  as.numeric(all_VAFs$VAF_fwd[all_VAFs$VAF_fwd != "not_detected"])*100
 
 colnames(all_VAFs) <- c(
-  "Patient_id", "Sample_id", "Library_id", "Treatment", "Sanger_SNV", 
-  "smCounter2_SNV", "ddPCR_SNV_VAF", "GeneGlobe_SNV_VAF", "smCounter2_VAF", 
-  "smCounter2_effect_size", "Sanger_deletion", "Andre_deletion", 
-  "Andre_deletion_confidence", "Deletion",
-  "ddPCR_deletion_VAF", "Andre_deletion_VAF", "Deletion_VAF", 
-  "Upstream_deletion_VAF", "Downstream_deletion_VAF", "Upstream_supporting", 
-  "Upstream_non_supporting", "Upstream_total", "Downstream_supporting", 
-  "Downstream_non_supporting", "Downstream_total", "Total_supporting" )
+  "Patient_id", "Sample_id", "Library_id", "Site", "Treatment/dilution", 
+  "Sanger_TP53_SNV", "TP53_SNV_type", "smCounter2_TP53_SNV", "ddPCR_TP53_VAF", 
+  "GeneGlobe_TP53_VAF", "smCounter2_TP53_VAF", "smCounter2_TP53_effect_size",
+  "smCounter2_TP53_UMT", "smCounter2_TP53_VMT", "smCounter2_TP53_qual", 
+  "Sanger_STAG2_SNV", "smCounter2_STAG2_SNV", "ddPCR_STAG2_VAF", 
+  "GeneGlobe_STAG2_VAF", "smCounter2_STAG2_VAF", "smCounter2_STAG2_effect_size", 
+  "smCounter2_STAG2_UMT", "smCounter2_STAG2_VMT", "smCounter2_STAG2_qual", 
+  "Pathology_EWSR1_FLI1", "Fusion_EWSR1_FLI1", "Fusion_VAF",
+  "Forward_supporting", "Forward_non_supporting", "Forward_total" )
 
 # subset deletion columns only, order by patient and write:
-deletion_VAFs <- subset(all_VAFs, select = -c(
-  Sanger_SNV, smCounter2_SNV, ddPCR_SNV_VAF, GeneGlobe_SNV_VAF, smCounter2_VAF, 
-  smCounter2_effect_size ))
-deletion_VAFs$Library_id <- factor(
-  deletion_VAFs$Library_id, levels = summary_df$Library_id )
-deletion_VAFs <- deletion_VAFs[order(deletion_VAFs$Library_id),]
+fusion_VAFs <- subset(all_VAFs, select = -c(
+  Sanger_TP53_SNV, TP53_SNV_type, smCounter2_TP53_SNV, 
+  ddPCR_TP53_VAF, GeneGlobe_TP53_VAF, smCounter2_TP53_VAF, 
+  smCounter2_TP53_effect_size,
+  smCounter2_TP53_UMT, smCounter2_TP53_VMT, smCounter2_TP53_qual, 
+  Sanger_STAG2_SNV, smCounter2_STAG2_SNV, ddPCR_STAG2_VAF, 
+  GeneGlobe_STAG2_VAF, smCounter2_STAG2_VAF, smCounter2_STAG2_effect_size,
+  smCounter2_STAG2_UMT, smCounter2_STAG2_VMT, smCounter2_STAG2_qual ))
+fusion_VAFs$Library_id <- factor(
+  fusion_VAFs$Library_id, levels = summary_df$Library_id )
+fusion_VAFs <- fusion_VAFs[order(fusion_VAFs$Library_id),]
 
 write.table(
-  deletion_VAFs, 
-  file.path(table_dir, "final_deletion_summary.tsv"),
+  fusion_VAFs, 
+  file.path(table_dir, "final_fusion_summary.tsv"),
   sep = "\t",
   col.names = TRUE,
   row.names = FALSE )
@@ -134,72 +130,83 @@ write.table(
 ####################################################################################
 
 # check distributions of VAFs:
-plot(hist(all_VAFs$ddPCR[all_VAFs$ddPCR != 0]))
-plot(hist(all_VAFs$Andre_deletion_VAF[all_VAFs$Andre_deletion_VAF != 0]))
-plot(hist(all_VAFs$avg_VAF[all_VAFs$avg_VAF != 0]))
+plot(hist(as.numeric(all_VAFs$smCounter2_TP53_VAF[
+  all_VAFs$smCounter2_TP53_VAF != 0 & all_VAFs$smCounter2_TP53_VAF != "not_detected" ])))
+plot(hist(as.numeric(all_VAFs$smCounter2_STAG2_VAF[
+  all_VAFs$smCounter2_STAG2_VAF != 0 & all_VAFs$smCounter2_STAG2_VAF != "not_detected" ])))
 dev.off()
 
-# create ddPCR vs Andre_deletion_VAF VAF plot:
-VAF_df <- subset(all_VAFs, select = c(Sample_id, Treatment, ddPCR_deletion_VAF, Andre_deletion_VAF))
+# create smCounter2 TP53 vs STAG2 VAF plot:
+VAF_df <- subset(all_VAFs, select = c(
+  Sample_id, Treatment.dilution, smCounter2_TP53_VAF, smCounter2_STAG2_VAF ))
 colnames(VAF_df) <- c("id", "treatment", "VAF1", "VAF2")
-VAF_df$treatment <- gsub("dilution_.*$", "HepG2", VAF_df$treatment)
-ddPCR_vs_Andre_avg <- compare_VAF(
-  VAF_df, lab1 = "ddPCR", lab2 = "Andre_avg", lim = 0.4, cortype = "pearson" )
+VAF_df$treatment[43:54] <- "ES8"
+VAF_df$treatment[55:65] <- "A673"
+TP53_vs_STAG2_VAF <- compare_VAF(
+  VAF_df, lab1 = "smCounter2_TP53", lab2 = "smCounter2_STAG2", 
+  lim = 100, cortype = "pearson" )
 
-pdf(file.path(plot_dir, "ddPCR_vs_Andre_deletion_VAFs.pdf"),
+pdf(file.path(plot_dir, "smCounter2_TP53_vs_STAG2_VAFs.pdf"),
     height = 3.5,
     width = 5)
-  print(ddPCR_vs_Andre_avg)
+  print(TP53_vs_STAG2_VAF)
 dev.off()
 
-png(file.path(plot_dir, "ddPCR_vs_Andre_deletion_VAFs.png"),
+png(file.path(plot_dir, "smCounter2_TP53_vs_STAG2_VAFs.png"),
     height = 3.5,
     width = 5,
     res = 300,
     units = "in")
-  print(ddPCR_vs_Andre_avg)
+  print(TP53_vs_STAG2_VAF)
 dev.off()
 
-# create average VAF vs Andre's average VAF plot:
-VAF_df <- subset(all_VAFs, select = c(Sample_id, Treatment, Andre_deletion_VAF, Deletion_VAF))
+# create smCounter2 TP53 vs fusion VAF plot:
+VAF_df <- subset(all_VAFs, select = c(
+  Sample_id, Treatment, smCounter2_TP53_VAF, Fusion_VAF ))
 colnames(VAF_df) <- c("id", "treatment", "VAF1", "VAF2")
-VAF_df$treatment <- gsub("dilution_.*$", "HepG2", VAF_df$treatment)
-Andre_vs_new_avg <- compare_VAF(
-  VAF_df, lab1 = "avg Andre", lab2 = "avg new", lim = 0.4, cortype = "pearson" )
+VAF_df$treatment[43:54] <- "ES8"
+VAF_df$treatment[55:65] <- "A673"
 
-png(file.path(plot_dir, "Andre_deletion_VAF_vs_new_VAFs.png"),
+TP53_vs_fusion_VAF <- compare_VAF(
+  VAF_df, lab1 = "smCounter2_TP53", lab2 = "Fusion", 
+  lim = 100, cortype = "pearson" )
+
+pdf(file.path(plot_dir, "smCounter2_TP53_vs_fusion_VAFs.pdf"),
+    height = 3.5,
+    width = 5)
+print(TP53_vs_fusion_VAF)
+dev.off()
+
+png(file.path(plot_dir, "smCounter2_TP53_vs_fusion_VAFs.png"),
     height = 3.5,
     width = 5,
     res = 300,
     units = "in")
-  print(Andre_vs_new_avg)
+print(TP53_vs_fusion_VAF)
 dev.off()
 
-pdf(file.path(plot_dir, "Andre_deletion_VAF_vs_new_VAFs.pdf"),
+# create smCounter2 STAG2 vs fusion VAF plot:
+VAF_df <- subset(all_VAFs, select = c(
+  Sample_id, Treatment.dilution, smCounter2_STAG2_VAF, Fusion_VAF ))
+colnames(VAF_df) <- c("id", "treatment", "VAF1", "VAF2")
+VAF_df$treatment[43:54] <- "ES8"
+VAF_df$treatment[55:65] <- "A673"
+
+STAG2_vs_fusion_VAF <- compare_VAF(
+  VAF_df, lab1 = "smCounter2_STAG2", lab2 = "Fusion", 
+  lim = 100, cortype = "pearson" )
+
+pdf(file.path(plot_dir, "smCounter2_STAG2_vs_fusion_VAFs.pdf"),
     height = 3.5,
     width = 5)
-print(Andre_vs_new_avg)
+print(STAG2_vs_fusion_VAF)
 dev.off()
 
-# create ddPCR vs new VAF plot:
-VAF_df <- subset(all_VAFs, select = c(Sample_id, Treatment, ddPCR_deletion_VAF, Deletion_VAF))
-colnames(VAF_df) <- c("id", "treatment", "VAF1", "VAF2")
-VAF_df$treatment <- gsub("dilution_.*$", "HepG2", VAF_df$treatment)
-ddPCR_vs_new <- compare_VAF(
-  VAF_df, lab1 = "ddPCR", lab2 = "avg new", lim = 0.4, 
-  cortype = "pearson" )
-
-png(file.path(plot_dir, "ddPCR_vs_new_VAFs.png"),
+png(file.path(plot_dir, "smCounter2_STAG2_vs_fusion_VAFs.png"),
     height = 3.5,
     width = 5,
     res = 300,
     units = "in")
-print(ddPCR_vs_new)
-dev.off()
-
-pdf(file.path(plot_dir, "ddPCR_vs_new_VAFs.pdf"),
-    height = 3.5,
-    width = 5)
-print(ddPCR_vs_new)
+print(STAG2_vs_fusion_VAF)
 dev.off()
 

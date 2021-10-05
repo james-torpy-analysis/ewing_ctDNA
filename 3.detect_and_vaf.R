@@ -4,7 +4,7 @@ args = commandArgs(trailingOnly=TRUE)
 projectname <- args[1]
 samplename <- args[2]
 #projectname <- "ewing_ctDNA"
-#samplename <- "409_008_DB62M_GTAGAGGA-CTCTCTAT_L001" 
+#samplename <- "409_056_DCKVC_AGGCAGAA-CTCTCTAT_L001" 
 
 home_dir <- "/share/ScratchGeneral/jamtor/"
 #home_dir <- "/Users/torpor/clusterHome/"
@@ -118,11 +118,20 @@ gr_fli1 <- GRanges(
   ranges = IRanges(start = 128556430, end = 128683162),
   strand = "*" )
 
-# find fusion supporting split R1s:
+# find fusion supporting split reads:
 split_R1 <- R1[lengths(range(R1)) == 2L]
+
 
 ######
 ### new code ###
+split_R2 <- R2[lengths(range(R2)) == 2L]
+
+# require that primary and supp alignments are on the same strand, to filter out
+# weird fusions e.g. upstream of EWSR1 joined to upstream of FLI1:
+split_R1 <- split_R1[sapply(split_R1, function(x) length(unique(strand(x))) == 1)]
+split_R2 <- split_R2[sapply(split_R2, function(x) length(unique(strand(x))) == 1)]
+
+# find fusion supporting split R1s:
 del_R1 <- sapply(split_R1, function (x) {
   i_ewsr1 <- which(x %over% gr_ewsr1)
   i_fli1 <- which(x %over% gr_fli1)
@@ -137,7 +146,6 @@ del_R1 <- sapply(split_R1, function (x) {
 del_R1 <- unlist(del_R1)
 
 # find fusion supporting split R2s:
-split_R2 <- R2[lengths(range(R2)) == 2L]
 del_R2 <- sapply(split_R2, function (x) {
   i_ewsr1 <- which(x %over% gr_ewsr1)
   i_fli1 <- which(x %over% gr_fli1)
@@ -150,6 +158,10 @@ del_R2 <- sapply(split_R2, function (x) {
   }
 })
 del_R2 <- unlist(del_R2)
+
+# save as bams:
+writeSam(file_bam, names(del_R1), paste0(out_bam_dir, "/fusion_split_R1s.sam"))
+writeSam(file_bam, names(del_R2), paste0(out_bam_dir, "/fusion_split_R2s.sam"))
 
 # keep only unique fusions:
 fusion_list <- as.list(unique(c(gsub(":\\+|:\\-", ":\\*", del_R1), gsub(":\\+|:\\-", ":\\*", del_R2))))
@@ -304,27 +316,41 @@ if (length(fusions) >= 1) {
     
   }
   
-  save.image(paste0(Robject_dir, "VAFs_calculated.Rdata"))
+  save.image(file.path(Robject_dir, "VAFs_calculated.Rdata"))
   
-  # write VAFs as df:
+  # collate VAFs as df:
   VAF_df <- do.call("rbind", VAFs)
 
-  # order by forward supporting read number:
-  VAF_df <- VAF_df[order(VAF_df$Forward_supporting),]
-  
-  write.table(
-    VAF_df,
-    paste0(out_path, "VAF.tsv"),
-    sep = "\t",
-    quote = F,
-    row.names = T,
-    col.names = T)
-  
-  saveRDS(VAF_df, paste0(Robject_dir, "VAF.rds"))
-} else {
-  ## create output file for snakemake
+  # remove reverse fusions for now:
+  VAF_df <- subset(VAF_df, 
+    select = -c(VAF_rev, Reverse_supporting, Reverse_non_supporting, Reverse_total) )
+
+  # remove fusions with no supporting reads:
+  VAF_df <- VAF_df[VAF_df$Forward_supporting != 0,]
+
+  if (nrow(VAF_df) > 0) {
+    # order by forward supporting read number:
+    VAF_df <- VAF_df[order(VAF_df$Forward_supporting),]
+    
+    write.table(
+      VAF_df,
+      paste0(out_path, "VAF.tsv"),
+      sep = "\t",
+      quote = F,
+      row.names = T,
+      col.names = T)
+    saveRDS(VAF_df, paste0(Robject_dir, "VAF.rds"))
+
+  } else {
+    ## create output file for snakemake
     VAF <- NULL
     saveRDS(VAF, paste0(Robject_dir, "/VAF.rds"))
+  }
+  
+} else {
+  ## create output file for snakemake
+  VAF <- NULL
+  saveRDS(VAF, paste0(Robject_dir, "/VAF.rds"))
 }
 
 
