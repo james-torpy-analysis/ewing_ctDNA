@@ -4,7 +4,7 @@ args = commandArgs(trailingOnly=TRUE)
 projectname <- args[1]
 samplename <- args[2]
 #projectname <- "ewing_ctDNA"
-#samplename <- "409_056_DCKVC_AGGCAGAA-CTCTCTAT_L001" 
+#samplename <- "409_016_DBV4V_TAGGCATG-CTCTCTAT_L001" 
 
 home_dir <- "/share/ScratchGeneral/jamtor/"
 #home_dir <- "/Users/torpor/clusterHome/"
