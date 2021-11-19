@@ -5,6 +5,8 @@ longitudinal_patient_heatmap <- function(
   hm_cols
 ) {
   
+  library(naturalsort)
+  library(reshape2)
   library(ComplexHeatmap)
   
   # change NAs in site column to 'unknown':
@@ -28,22 +30,7 @@ longitudinal_patient_heatmap <- function(
   detect_df <- dcast(
     detect_df, Patient_id + Site ~Treatment.dilution, value.var = "Fusion_VAF" )
   
-  # order dfs:
-  VAF_df <- VAF_df[naturalorder(gsub("^.*_|M0|P", "", VAF_df$Patient_id)),]
-  VAF_df$Site <- factor(VAF_df$Site, levels = c("primary", "met", "unknown"))
-  VAF_df <- VAF_df[order(VAF_df$Site),]
-  
-  detect_df <- detect_df[naturalorder(gsub("^.*_|M0|P", "", detect_df$Patient_id)),]
-  detect_df$Site <- factor(detect_df$Site, levels = c("primary", "met", "unknown"))
-  detect_df <- detect_df[order(detect_df$Site),]
-  
-  # define site(row) and pathology(column) split vectors:
-  met_split <- VAF_df$Site
-  path_split <- factor(
-    c("path", rep("non_path", length(unique(fusion_df$Treatment.dilution)))),
-    levels = c("path", "non_path") )
-  
-  # make rownames are patient ids and add pathology column:
+  # make rownames patient ids and add pathology column:
   rownames(VAF_df) <- VAF_df$Patient_id
   VAF_df$pathology <- " "
   VAF_df <- VAF_df[
@@ -52,9 +39,9 @@ longitudinal_patient_heatmap <- function(
   VAF_df <- VAF_df %>%
     select(pathology, everything())
   
-  # make rownames are patient ids and add pathology column:
+  # merge pathology results with dfs:
   rownames(detect_df) <- detect_df$Patient_id
-  detect_df <- subset(detect_df, select = -c(Patient_id, Site))
+  detect_df <- subset(detect_df, select = -Patient_id)
   path_df <- subset(fusion_df, select = c(Patient_id, Pathology_EWSR1_FLI1))
   path_df <- path_df[!duplicated(path_df$Patient_id),]
   path_df$Pathology_EWSR1_FLI1[
@@ -64,10 +51,30 @@ longitudinal_patient_heatmap <- function(
     path_df$Pathology_EWSR1_FLI1 == "not_detected" ] <- "no_pathology_detection"
   path_df$Pathology_EWSR1_FLI1[is.na(path_df$Pathology_EWSR1_FLI1)] <- "unknown"
   rownames(path_df) <- path_df$Patient_id
+  path_df <- path_df[match(rownames(detect_df), path_df$Patient_id),]
   path_df <- subset(path_df, select = -Patient_id)
   colnames(path_df) <- "pathology"
   
   detect_df <- cbind(path_df, detect_df)
+  
+  # order dfs by name, pathology status, and site:
+  detect_df <- as.data.frame(
+    detect_df[naturalorder(gsub("^.*_|M0|P", "", rownames(detect_df))),] )
+  detect_df$pathology <- factor(detect_df$pathology, 
+    levels = c("pathology_detection", "no_pathology_detection", "unknown") ) 
+  detect_df <- detect_df[order(detect_df$pathology),]
+  detect_df$Site <- factor(
+    detect_df$Site, levels = c("primary", "met", "unknown") )
+  detect_df <- detect_df[order(detect_df$Site),]
+  
+  # define site(row) and pathology(column) split vectors:
+  met_split <- detect_df$Site
+  path_split <- factor(
+    c("path", rep("non_path", length(unique(fusion_df$Treatment.dilution)))),
+    levels = c("path", "non_path") )
+  detect_df <- subset(detect_df, select = -Site)
+  
+  VAF_df <- VAF_df[match(rownames(detect_df), rownames(VAF_df)),]
   
   # make NAs 'unknown':
   detect_df <- apply(detect_df, 2, function(x) {
@@ -75,8 +82,14 @@ longitudinal_patient_heatmap <- function(
     return(x)
   })
   
+  # create annot_df:
+  annot_df <- apply(VAF_df, 2, function(x) {
+    x[!is.na(x) & x != " "] <- paste0("EWSR1/FLI1: ", x[!is.na(x) & x != " "])
+    return(x)
+  })
+  
   # make NAs blank:
-  VAF_df <- apply(VAF_df, 2, function(x) {
+  annot_df <- apply(annot_df, 2, function(x) {
     x[is.na(x)] <- " "
     return(x)
   })
@@ -93,9 +106,9 @@ longitudinal_patient_heatmap <- function(
     column_title = hm_title,
     cell_fun = function(j, i, x, y, width, height, fill) {
       grid.text(
-        VAF_df[i, j], x, y, 
-        gp = gpar(fontsize = 10, fontface = "bold", col = "#991425") )
-    }
+        annot_df[i, j], x, y, 
+        gp = gpar(fontsize = 6, fontface = "bold", col = "#991425") )
+    },
   )
   
   # return heatmaps:

@@ -1,6 +1,6 @@
 
-#home_dir <- "/share/ScratchGeneral/jamtor/"
-home_dir <- "/Users/torpor/clusterHome/"
+home_dir <- "/share/ScratchGeneral/jamtor/"
+#home_dir <- "/Users/torpor/clusterHome/"
 project_dir <- paste0(home_dir, "projects/ewing_ctDNA/")
 ref_dir <- paste0(project_dir, "refs/")
 
@@ -18,6 +18,7 @@ dir.create(plot_dir)
 
 library(dplyr)
 library(tibble)
+library(naturalsort)
 
 
 ####################################################################################
@@ -25,22 +26,18 @@ library(tibble)
 ####################################################################################
 
 fetch_fusion_no <- dget(paste0(func_dir, "fetch_fusion_no.R"))
-longitudinal_patient_heatmap <- dget(
-  paste0(func_dir, "longitudinal_patient_heatmap.R") )
-longitudinal_dilution_heatmap <- dget(
-  paste0(func_dir, "longitudinal_dilution_heatmap.R") )
+mutation_heatmap <- dget(paste0(func_dir, "mutation_heatmap.R") )
 
 hm_cols <- c(
   pathology_detection = "#75EA3D",
   no_pathology_detection = "#58B9DB",
-  detected = "#F7A006",
+  detected = "#F4D30B",
   not_detected = "black",
-  unknown = "grey" )
+  no_sample = "grey" )
 
 annot_cols <- c(
-  FP = "#991425",
-  VAF = "#221699",
-  sread = "#115E0F" )
+  VAF = "#991425",
+  sread = "#430F82" )
 
 
 ####################################################################################
@@ -57,51 +54,39 @@ patient_df <- summary_df[
   summary_df$Site != "cell_line" | is.na(summary_df$Site), ]
 
 patient_df$Treatment.dilution <- factor(patient_df$Treatment.dilution,
-  levels = c("tumour", "resection", "naive", "NACT1", "NACT2", "ACT1", 
+  levels = c("tumour", "naive", "NACT1", "NACT2", "resection", "ACT1", 
     "targeted", "relapse", "ACT2" ))
 patient_df <- patient_df[order(patient_df$Treatment.dilution),]
 
+# remove STAG2 detection in ES_6 ACT2:
+patient_df[
+  patient_df$Patient_id == "ES_6" & 
+  patient_df$Treatment.dilution == "ACT2",]$smCounter2_STAG2_VAF <- "not_detected"
+
 # separate and order cell line samples:
-cl_df <- summary_df[summary_df$Site == "cell_line",]
-cl_df <- cl_df[order(cl_df$Treatment.dilution, decreasing = TRUE),]
+cl_df <- summary_df[summary_df$Site == "cell_line" & !is.na(summary_df$Site),]
+cl_df <- cl_df[naturalorder(cl_df$Treatment.dilution, decreasing = TRUE),]
+cl_df <- cl_df[order(cl_df$Patient_id),]
 
 
 ####################################################################################
 ### 2. Create longitudinal heatmaps ###
 ####################################################################################
 
-patient_heatmaps_VAF <- longitudinal_patient_heatmap(
+patient_heatmaps <- mutation_heatmap(
   fusion_df = patient_df,
-  hm_title = "Patient EWSR1/FLI1 fusion detections",
-  annot = "VAF",
-  hm_cols = hm_cols
-)
+  type = "patient",
+  hm_cols )
 
-dilution_heatmaps_VAF <- longitudinal_dilution_heatmap(
-  fusion_df = fusion_dfs$dilution,
-  hm_title = "Cell line EWSR1/FLI1 fusion detections",
-  annot = "VAF",
-  hm_cols = hm_cols
-)
+cl_heatmaps <- mutation_heatmap(
+  fusion_df = cl_df,
+  type = "dilution",
+  hm_cols )
 
-all_heatmaps <- list(
-  patient_heatmap_FP = longitudinal_patient_heatmap(
-    fusion_df = fusion_dfs$patient,
-    hm_title = "Patient EWSR1/FLI1 fusion detections",
-    annot = "false positives",
-    hm_cols = hm_cols
-  ),
-  patient_heatmap_VAF = patient_heatmaps_VAF$VAF_annot,
-  patient_heatmap_sread = patient_heatmaps_VAF$sread_annot,
-  dilution_heatmap_FP = longitudinal_dilution_heatmap(
-    fusion_df = fusion_dfs$dilution,
-    hm_title = "Cell line EWSR1/FLI1 fusion detections",
-    annot = "false positives",
-    hm_cols = hm_cols
-  ),
-  dilution_heatmap_VAF = dilution_heatmaps_VAF$VAF_annot,
-  dilution_heatmap_sread = dilution_heatmaps_VAF$sread_annot
-)
+all_heatmaps <- c(patient_heatmaps, cl_heatmaps)
+names(all_heatmaps) <- c(
+  paste0("patient_heatmap_", names(all_heatmaps)[1:2]),
+  paste0("cell_line_heatmap_", names(all_heatmaps)[3:4]) )
 
 for (i in seq_along(all_heatmaps)) {
   
@@ -111,27 +96,40 @@ for (i in seq_along(all_heatmaps)) {
   )
   dev.off()
   
+  # write to png:
   if (length(grep("patient", names(all_heatmaps)[i])) > 0) {
     
     png(
       paste0(plot_dir, names(all_heatmaps)[i], "_annotated.png"),
-      width = 10,
-      height = 6,
+      width = 14.5,
+      height = 9,
       unit = "in",
       res = 300
     )
-    annot_coord <-  0.41
+    annot_y <-  0.43
+    
+    if (length(grep("VAF", names(all_heatmaps)[i])) > 0) {
+      annot_x <- 0.798
+    } else {
+      annot_x <- 0.828
+    }
     
   } else {
     
     png(
       paste0(plot_dir, names(all_heatmaps)[i], "_annotated.png"),
-      width = 10,
+      width = 20,
       height = 3,
       unit = "in",
       res = 300
     )
-    annot_coord <-  0.37
+    annot_y <-  0.41
+    
+    if (length(grep("VAF", names(all_heatmaps)[i])) > 0) {
+      annot_x <- 0.834
+    } else {
+      annot_x <- 0.83
+    }
     
   }
   
@@ -142,23 +140,10 @@ for (i in seq_along(all_heatmaps)) {
       grid.draw(hm_grob)
     popViewport()
     
-    if (length(grep("FP", names(all_heatmaps)[i])) > 0) {
+    if (length(grep("VAF", names(all_heatmaps)[i])) > 0) {
       
-      pushViewport(viewport(x = 0.99, y = annot_coord, width = 0.2, height = 0.1, 
-        just = c("right", "top")))
-      
-        grid.text(
-          "x = No. false positives", 
-          gp=gpar(fontsize=10, fontface="bold", 
-            col=annot_cols[names(annot_cols) == "FP"])
-        )
-      
-      popViewport()
-      
-    } else if (length(grep("VAF", names(all_heatmaps)[i])) > 0) {
-      
-      pushViewport(viewport(x = 0.95, y = annot_coord, width = 0.2, height = 0.1, 
-        just = c("right", "top")))
+      pushViewport(viewport(x = annot_x, y = annot_y, width = 0.2, height = 0.1, 
+        just = c("left", "top")))
         grid.text(
           "x% = VAF", 
           gp=gpar(fontsize=10, fontface="bold", 
@@ -168,8 +153,8 @@ for (i in seq_along(all_heatmaps)) {
       
     } else {
       
-      pushViewport(viewport(x = 0.995, y = annot_coord, width = 0.2, height = 0.1, 
-        just = c("right", "top")))
+      pushViewport(viewport(x = annot_x, y = annot_y, width = 0.2, height = 0.1, 
+        just = c("left", "top")))
         grid.text(
           "x = No. supporting reads", 
           gp=gpar(fontsize=10, fontface="bold", 
@@ -177,6 +162,59 @@ for (i in seq_along(all_heatmaps)) {
         )
       popViewport()
     }
+  
+  dev.off()
+  
+  # write to pdf:
+  if (length(grep("patient", names(all_heatmaps)[i])) > 0) {
+    
+    pdf(
+      paste0(plot_dir, names(all_heatmaps)[i], "_annotated.pdf"),
+      width = 14.5,
+      height = 9,
+    )
+    annot_y <-  0.41
+    
+  } else {
+    
+    pdf(
+      paste0(plot_dir, names(all_heatmaps)[i], "_annotated.pdf"),
+      width = 26,
+      height = 3,
+    )
+    annot_y <-  0.37
+    
+  }
+  
+  grid.newpage()
+  
+  pushViewport(viewport(x = 0.027, y = 0.01, width = 0.964, height = 0.89, 
+                        just = c("left", "bottom")))
+  grid.draw(hm_grob)
+  popViewport()
+  
+  if (length(grep("VAF", names(all_heatmaps)[i])) > 0) {
+    
+    pushViewport(viewport(x = annot_x, y = annot_y, width = 0.2, height = 0.1, 
+                          just = c("left", "top")))
+    grid.text(
+      "x% = VAF", 
+      gp=gpar(fontsize=10, fontface="bold", 
+              col=annot_cols[names(annot_cols) == "VAF"])
+    )
+    popViewport()
+    
+  } else {
+    
+    pushViewport(viewport(x = annot_x, y = annot_y, width = 0.2, height = 0.1, 
+                          just = c("left", "top")))
+    grid.text(
+      "x = No. supporting reads", 
+      gp=gpar(fontsize=10, fontface="bold", 
+              col=annot_cols[names(annot_cols) == "sread"])
+    )
+    popViewport()
+  }
   
   dev.off()
   

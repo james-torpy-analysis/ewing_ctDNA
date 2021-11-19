@@ -1,7 +1,8 @@
 projectname <- "ewing_ctDNA"
+germline_mutations <- c("chr17:7578457_G>A")
 
-#home_dir <- "/share/ScratchGeneral/jamtor/"
-home_dir <- "/Users/torpor/clusterHome"
+home_dir <- "/share/ScratchGeneral/jamtor/"
+#home_dir <- "/Users/torpor/clusterHome"
 project_dir <- file.path(home_dir, "projects", projectname)
 func_dir <- file.path(project_dir, "scripts/functions")
 result_dir <- file.path(project_dir, "results/")
@@ -29,7 +30,7 @@ compare_VAF <- dget(file.path(func_dir, "compare_VAF.R"))
 ####################################################################################
 
 summary_df <- read.table(
-  file.path(variant_dir, "sample_summary_with_smcounter_SNV.tsv"),
+  file.path(variant_dir, "sample_summary_with_smcounter_point_mut.tsv"),
   sep = "\t",
   header = TRUE )
 
@@ -70,10 +71,10 @@ all_VAFs <- merge(summary_df, VAF_df, by="Library_id")
 
 all_VAFs <- subset(all_VAFs, select = c(
   Patient_id, Sample_id, Library_id, Site, Treatment.dilution, 
-  Sanger_TP53_SNV, TP53_SNV_type, smCounter2_TP53_SNV, ddPCR_TP53_VAF, 
+  Sanger_TP53_point_mut, smCounter2_TP53_point_mut, ddPCR_TP53_VAF, 
   GeneGlobe_TP53_VAF, smCounter2_TP53_VAF, smCounter2_TP53_effect_size,
   smCounter2_TP53_UMT, smCounter2_TP53_VMT, smCounter2_TP53_qual, 
-  Sanger_STAG2_SNV, smCounter2_STAG2_SNV, ddPCR_STAG2_VAF, 
+  Sanger_STAG2_point_mut, smCounter2_STAG2_point_mut, ddPCR_STAG2_VAF, 
   GeneGlobe_STAG2_VAF, smCounter2_STAG2_VAF, smCounter2_STAG2_effect_size,
   smCounter2_STAG2_UMT, smCounter2_STAG2_VMT, smCounter2_STAG2_qual, 
   Pathology_EWSR1_FLI1, Fusion, VAF_fwd,
@@ -84,23 +85,41 @@ all_VAFs$VAF_fwd[all_VAFs$VAF_fwd != "not_detected"] <-
   as.numeric(all_VAFs$VAF_fwd[all_VAFs$VAF_fwd != "not_detected"])*100
 
 colnames(all_VAFs) <- c(
-  "Patient_id", "Sample_id", "Library_id", "Site", "Treatment/dilution", 
-  "Sanger_TP53_SNV", "TP53_SNV_type", "smCounter2_TP53_SNV", "ddPCR_TP53_VAF", 
+  "Patient_id", "Sample_id", "Library_id", "Site", "Treatment.dilution", 
+  "Sanger_TP53_point_mut", "smCounter2_TP53_point_mut", "ddPCR_TP53_VAF", 
   "GeneGlobe_TP53_VAF", "smCounter2_TP53_VAF", "smCounter2_TP53_effect_size",
   "smCounter2_TP53_UMT", "smCounter2_TP53_VMT", "smCounter2_TP53_qual", 
-  "Sanger_STAG2_SNV", "smCounter2_STAG2_SNV", "ddPCR_STAG2_VAF", 
+  "Sanger_STAG2_point_mut", "smCounter2_STAG2_point_mut", "ddPCR_STAG2_VAF", 
   "GeneGlobe_STAG2_VAF", "smCounter2_STAG2_VAF", "smCounter2_STAG2_effect_size", 
   "smCounter2_STAG2_UMT", "smCounter2_STAG2_VMT", "smCounter2_STAG2_qual", 
   "Pathology_EWSR1_FLI1", "Fusion_EWSR1_FLI1", "Fusion_VAF",
   "Forward_supporting", "Forward_non_supporting", "Forward_total" )
 
+# remove germline mutations:
+all_VAFs$Sanger_TP53_point_mut[
+  all_VAFs$smCounter2_TP53_point_mut %in% germline_mutations ] <- "not_detected"
+all_VAFs$GeneGlobe_TP53_VAF[
+  all_VAFs$smCounter2_TP53_point_mut %in% germline_mutations ] <- "not_detected"
+all_VAFs$smCounter2_TP53_VAF[
+  all_VAFs$smCounter2_TP53_point_mut %in% germline_mutations ] <- "not_detected"
+all_VAFs$smCounter2_TP53_effect_size[
+  all_VAFs$smCounter2_TP53_point_mut %in% germline_mutations ] <- "not_detected"
+all_VAFs$smCounter2_TP53_UMT[
+  all_VAFs$smCounter2_TP53_point_mut %in% germline_mutations ] <- "not_detected"
+all_VAFs$smCounter2_TP53_VMT[
+  all_VAFs$smCounter2_TP53_point_mut %in% germline_mutations ] <- "not_detected"
+all_VAFs$smCounter2_TP53_qual[
+  all_VAFs$smCounter2_TP53_point_mut %in% germline_mutations ] <- "not_detected"
+all_VAFs$smCounter2_TP53_point_mut[
+  all_VAFs$smCounter2_TP53_point_mut %in% germline_mutations ] <- "not_detected"
+
 # subset deletion columns only, order by patient and write:
 fusion_VAFs <- subset(all_VAFs, select = -c(
-  Sanger_TP53_SNV, TP53_SNV_type, smCounter2_TP53_SNV, 
+  Sanger_TP53_point_mut, smCounter2_TP53_point_mut, 
   ddPCR_TP53_VAF, GeneGlobe_TP53_VAF, smCounter2_TP53_VAF, 
   smCounter2_TP53_effect_size,
   smCounter2_TP53_UMT, smCounter2_TP53_VMT, smCounter2_TP53_qual, 
-  Sanger_STAG2_SNV, smCounter2_STAG2_SNV, ddPCR_STAG2_VAF, 
+  Sanger_STAG2_point_mut, smCounter2_STAG2_point_mut, ddPCR_STAG2_VAF, 
   GeneGlobe_STAG2_VAF, smCounter2_STAG2_VAF, smCounter2_STAG2_effect_size,
   smCounter2_STAG2_UMT, smCounter2_STAG2_VMT, smCounter2_STAG2_qual ))
 fusion_VAFs$Library_id <- factor(
@@ -124,6 +143,21 @@ write.table(
   col.names = TRUE,
   row.names = FALSE )
 
+# add sample depth info:
+#subtab <- read.table("/share/ScratchGeneral/jamtor/projects/ewing_ctDNA/results/VAF_calculation/tables/final_summary.tsv", header=T, sep = "\t")
+#
+#reseq <- read.table("/share/ScratchGeneral/jamtor/projects/ewing_ctDNA/results/resequencing_summary.tsv", header=T, sep = "\t")
+#
+#colnames(reseq)[1] <- "Sample_id"
+#
+#both <- merge(subtab, reseq, by="Sample_id", all=T)
+#
+#both <- both[,c(1:29, 31:34)]
+#
+#colnames(both)[30:33] <- c("Reads", "UMIs", "Reads_per_UMI", "Resequenced")
+#
+#write.table(both, "/share/ScratchGeneral/jamtor/projects/ewing_ctDNA/results/VAF_calculation/tables/final_summary_with_depth_info.tsv", sep = "\t", col.names=T, row.names=F, quote=F)
+
 
 ####################################################################################
 ### 3. Plot VAF correlations ###
@@ -136,12 +170,23 @@ plot(hist(as.numeric(all_VAFs$smCounter2_STAG2_VAF[
   all_VAFs$smCounter2_STAG2_VAF != 0 & all_VAFs$smCounter2_STAG2_VAF != "not_detected" ])))
 dev.off()
 
+# take the mean of any 2 value VAFs:
+plot_VAFs <- all_VAFs
+plot_VAFs$GeneGlobe_TP53_VAF[grep("/", plot_VAFs$GeneGlobe_TP53_VAF)] <- 
+  sapply(strsplit(
+    plot_VAFs$GeneGlobe_TP53_VAF[grep("/", plot_VAFs$GeneGlobe_TP53_VAF)], "/" ),
+    function(x) mean(as.numeric(x)) )
+plot_VAFs$GeneGlobe_STAG2_VAF[grep("/", plot_VAFs$GeneGlobe_STAG2_VAF)] <- 
+  sapply(strsplit(
+    plot_VAFs$GeneGlobe_STAG2_VAF[grep("/", plot_VAFs$GeneGlobe_STAG2_VAF)], "/" ),
+    function(x) mean(as.numeric(x)) )
+
 # create smCounter2 TP53 vs STAG2 VAF plot:
 VAF_df <- subset(all_VAFs, select = c(
-  Sample_id, Treatment.dilution, smCounter2_TP53_VAF, smCounter2_STAG2_VAF ))
+  Patient_id, Treatment.dilution, smCounter2_TP53_VAF, smCounter2_STAG2_VAF ))
 colnames(VAF_df) <- c("id", "treatment", "VAF1", "VAF2")
-VAF_df$treatment[43:54] <- "ES8"
-VAF_df$treatment[55:65] <- "A673"
+VAF_df$treatment[VAF_df$id == "ES8"] <- "ES8"
+VAF_df$treatment[VAF_df$id == "A673"] <- "A673"
 TP53_vs_STAG2_VAF <- compare_VAF(
   VAF_df, lab1 = "smCounter2_TP53", lab2 = "smCounter2_STAG2", 
   lim = 100, cortype = "pearson" )
@@ -162,10 +207,10 @@ dev.off()
 
 # create smCounter2 TP53 vs fusion VAF plot:
 VAF_df <- subset(all_VAFs, select = c(
-  Sample_id, Treatment, smCounter2_TP53_VAF, Fusion_VAF ))
+  Patient_id, Treatment.dilution, smCounter2_TP53_VAF, Fusion_VAF ))
 colnames(VAF_df) <- c("id", "treatment", "VAF1", "VAF2")
-VAF_df$treatment[43:54] <- "ES8"
-VAF_df$treatment[55:65] <- "A673"
+VAF_df$treatment[VAF_df$id == "ES8"] <- "ES8"
+VAF_df$treatment[VAF_df$id == "A673"] <- "A673"
 
 TP53_vs_fusion_VAF <- compare_VAF(
   VAF_df, lab1 = "smCounter2_TP53", lab2 = "Fusion", 
@@ -187,10 +232,10 @@ dev.off()
 
 # create smCounter2 STAG2 vs fusion VAF plot:
 VAF_df <- subset(all_VAFs, select = c(
-  Sample_id, Treatment.dilution, smCounter2_STAG2_VAF, Fusion_VAF ))
+  Patient_id, Treatment.dilution, smCounter2_STAG2_VAF, Fusion_VAF ))
 colnames(VAF_df) <- c("id", "treatment", "VAF1", "VAF2")
-VAF_df$treatment[43:54] <- "ES8"
-VAF_df$treatment[55:65] <- "A673"
+VAF_df$treatment[VAF_df$id == "ES8"] <- "ES8"
+VAF_df$treatment[VAF_df$id == "A673"] <- "A673"
 
 STAG2_vs_fusion_VAF <- compare_VAF(
   VAF_df, lab1 = "smCounter2_STAG2", lab2 = "Fusion", 

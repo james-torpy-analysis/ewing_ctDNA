@@ -41,10 +41,10 @@ sm_vars <- list(
 
 # format:
 for (i in seq_along(sm_vars)) {
-  sm_vars[[i]]$new_SNV <- paste0(sm_vars[[i]]$seqnames, ":", sm_vars[[i]]$start, "_", 
+  sm_vars[[i]]$new_point_mut <- paste0(sm_vars[[i]]$seqnames, ":", sm_vars[[i]]$start, "_", 
     sm_vars[[i]]$ref, ">", sm_vars[[i]]$alt )
-  var_df <- subset(sm_vars[[i]], select = c(new_SNV, effect_size, VAF, UMT, VMT, qual) )
-  colnames(var_df) <- c("smCounter2_SNV", "smCounter2_effect_size", "smCounter2_VAF", 
+  var_df <- subset(sm_vars[[i]], select = c(new_point_mut, effect_size, VAF, UMT, VMT, qual) )
+  colnames(var_df) <- c("smCounter2_point_mut", "smCounter2_effect_size", "smCounter2_VAF", 
     "smCounter2_UMT", "smCounter2_VMT", "smCounter2_qual" )
   colnames(var_df) <- gsub("2_", paste0("2_", names(sm_vars)[i], "_"), colnames(var_df))
   var_df$Library_id <- rownames(var_df)
@@ -59,19 +59,19 @@ for (i in seq_along(sm_vars)) {
 final_vars <- merge(meta, var_dfs[[1]], by = "Library_id")
 final_vars <- merge(final_vars, var_dfs[[2]], by = "Library_id")
 
-# remove SNV info for not_detected samples:
-final_vars$smCounter2_TP53_SNV[grep("not_detected", final_vars$smCounter2_TP53_SNV)] <- 
+# remove point_mut info for not_detected samples:
+final_vars$smCounter2_TP53_point_mut[grep("not_detected", final_vars$smCounter2_TP53_point_mut)] <- 
   "not_detected"
-final_vars$smCounter2_STAG2_SNV[grep("not_detected", final_vars$smCounter2_STAG2_SNV)] <- 
+final_vars$smCounter2_STAG2_point_mut[grep("not_detected", final_vars$smCounter2_STAG2_point_mut)] <- 
   "not_detected"
 
 # subset:
 final_df <- subset(final_vars, 
   select = c(Patient_id, Sample_id, Library_id, Site, Treatment.dilution, 
-    Sanger_TP53_SNV, TP53_SNV_type, smCounter2_TP53_SNV, ddPCR_TP53_VAF, 
+    Sanger_TP53_point_mut, smCounter2_TP53_point_mut, ddPCR_TP53_VAF, 
     GeneGlobe_TP53_VAF, smCounter2_TP53_VAF, smCounter2_TP53_effect_size, 
     smCounter2_TP53_UMT, smCounter2_TP53_VMT, smCounter2_TP53_qual, 
-    Sanger_STAG2_SNV, smCounter2_STAG2_SNV, ddPCR_STAG2_VAF, 
+    Sanger_STAG2_point_mut, smCounter2_STAG2_point_mut, ddPCR_STAG2_VAF, 
     GeneGlobe_STAG2_VAF, smCounter2_STAG2_VAF, smCounter2_STAG2_effect_size, 
     smCounter2_STAG2_UMT, smCounter2_STAG2_VMT, smCounter2_STAG2_qual, 
     Pathology_EWSR1_FLI1 ) )
@@ -81,7 +81,7 @@ final_df <- final_df[match(meta$Sample_id, final_df$Sample_id),]
 
 write.table(
   final_df,
-  file.path(table_dir, "sample_summary_with_smcounter_SNV.tsv"),
+  file.path(table_dir, "sample_summary_with_smcounter_point_mut.tsv"),
   sep = "\t",
   col.names = TRUE,
   row.names = FALSE,
