@@ -34,10 +34,24 @@ roi_bed <- import(file.path(ref_dir, "CDHS-34925Z-409.roi.bed"))
 TP53 <- roi_bed[seqnames(roi_bed) == "chr17"]
 STAG2 <- roi_bed[seqnames(roi_bed) == "chrX"]
 
+# define relevant germline variants:
+gm_df <- data.frame(
+  seqnames=c("chrX", "chrX"),
+  start=c(123184949, 123195593),
+  width=rep(1, 1),
+  ref=c("C", "C"),
+  alt=c("CT", "CT") )
+
+gm_var <- GRanges(
+  seqnames=gm_df$seqnames,
+  ranges=IRanges(start=gm_df$start, width=gm_df$width),
+  ref=gm_df$ref, alt=gm_df$alt )
+
 # fetch and annotate VAFs:
 sm_vars <- list(
-  TP53 = do.call("rbind", lapply(meta_list, fetch_sm_vafs, TP53, reverse_strand = TRUE)),
-  STAG2 = do.call("rbind", lapply(meta_list, fetch_sm_vafs, STAG2)) )
+  TP53 = do.call("rbind", lapply(meta_list, fetch_sm_vafs, roi=TP53, gm_var,
+    reverse_strand=TRUE )),
+  STAG2 = do.call("rbind", lapply(meta_list, fetch_sm_vafs, roi=STAG2, gm_var)) )
 
 # format:
 for (i in seq_along(sm_vars)) {

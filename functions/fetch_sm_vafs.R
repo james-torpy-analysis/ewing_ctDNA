@@ -1,4 +1,4 @@
-fetch_sm_vafs <- function(sample_df, roi, reverse_strand = FALSE) {
+fetch_sm_vafs <- function(sample_df, roi, gm_var, reverse_strand=FALSE ) {
   
   library(plyr)
   print(sample_df$Library_id)
@@ -24,7 +24,6 @@ fetch_sm_vafs <- function(sample_df, roi, reverse_strand = FALSE) {
     pass_var <- vcf[vcf$V7 == "PASS",]
 
     # convert to granges:
-
     pass_gr <- GRanges(
       seqnames = pass_var$V1,
       ranges = IRanges(start = pass_var$V2, end = pass_var$V2),
@@ -78,6 +77,15 @@ fetch_sm_vafs <- function(sample_df, roi, reverse_strand = FALSE) {
     if (reverse_strand) {
       top_var$ref <- chartr("ATGC","TACG", top_var$ref)
       top_var$alt <- chartr("ATGC","TACG", top_var$alt)
+    }
+
+    # remove germline variants:
+    olaps <- findOverlaps(top_var, gm_var)
+    for (i in seq_along(queryHits(olaps))) {
+      if (top_var$ref[queryHits(olaps)[i]] == gm_var$ref[subjectHits(olaps)[i]] & 
+        top_var$alt[queryHits(olaps)[i]] == gm_var$alt[subjectHits(olaps)[i]] ) {
+        top_var <- top_var[-queryHits(olaps)[i]]
+      }
     }
     
     # keep best quality variant call:

@@ -133,8 +133,14 @@ write.table(
   col.names = TRUE,
   row.names = FALSE )
 
-# remove secondary deletion rows, order by patient and write:
+# remove secondary deletion rows and bind depth information:
 all_VAFs <- all_VAFs[!duplicated(all_VAFs$Library_id),]
+depth_df <- read.table(file.path(result_dir, "resequencing_summary.tsv"),
+  header=T, sep="\t" )
+all_VAFs <- merge(all_VAFs, subset(depth_df, select=-Fusion_supporting_reads), 
+  by="Sample_id", all.x=T )
+
+# order by patient and write:
 all_VAFs <- all_VAFs[match(summary_df$Library_id, all_VAFs$Library_id), ]
 write.table(
   all_VAFs, 
