@@ -4,7 +4,7 @@ args = commandArgs(trailingOnly=TRUE)
 projectname <- args[1]
 samplename <- args[2]
 #projectname <- "ewing_ctDNA"
-#samplename <- "409_016_DBV4V_TAGGCATG-CTCTCTAT_L001" 
+#samplename <- "409_004_combined" 
 
 home_dir <- "/share/ScratchGeneral/jamtor/"
 #home_dir <- "/Users/torpor/clusterHome/"
@@ -185,6 +185,8 @@ if (length(fusions) >= 1) {
   mcols(fusions)$join_strand <- "+"
   
   for (i in seq_along(fusions)) {
+
+    print(i)
     
     fusion <- fusions[i]
 

@@ -78,7 +78,8 @@ all_VAFs <- subset(all_VAFs, select = c(
   GeneGlobe_STAG2_VAF, smCounter2_STAG2_VAF, smCounter2_STAG2_effect_size,
   smCounter2_STAG2_UMT, smCounter2_STAG2_VMT, smCounter2_STAG2_qual, 
   Pathology_EWSR1_FLI1, Fusion, VAF_fwd,
-  Forward_supporting, Forward_non_supporting, Forward_total ))
+  Forward_supporting, Forward_non_supporting, Forward_total, 
+  Reads, UMIs, Reads_per_UMI ))
 
 # convert fusion VAFs to percentages:
 all_VAFs$VAF_fwd[all_VAFs$VAF_fwd != "not_detected"] <- 
@@ -93,7 +94,8 @@ colnames(all_VAFs) <- c(
   "GeneGlobe_STAG2_VAF", "smCounter2_STAG2_VAF", "smCounter2_STAG2_effect_size", 
   "smCounter2_STAG2_UMT", "smCounter2_STAG2_VMT", "smCounter2_STAG2_qual", 
   "Pathology_EWSR1_FLI1", "Fusion_EWSR1_FLI1", "Fusion_VAF",
-  "Forward_supporting", "Forward_non_supporting", "Forward_total" )
+  "Forward_supporting", "Forward_non_supporting", "Forward_total",
+  "Reads", "UMIs", "Reads_per_UMI" )
 
 # remove germline mutations:
 all_VAFs$Sanger_TP53_point_mut[
@@ -133,12 +135,8 @@ write.table(
   col.names = TRUE,
   row.names = FALSE )
 
-# remove secondary deletion rows and bind depth information:
+# remove secondary deletion rows::
 all_VAFs <- all_VAFs[!duplicated(all_VAFs$Library_id),]
-depth_df <- read.table(file.path(result_dir, "resequencing_summary.tsv"),
-  header=T, sep="\t" )
-all_VAFs <- merge(all_VAFs, subset(depth_df, select=-Fusion_supporting_reads), 
-  by="Sample_id", all.x=T )
 
 # order by patient and write:
 all_VAFs <- all_VAFs[match(summary_df$Library_id, all_VAFs$Library_id), ]

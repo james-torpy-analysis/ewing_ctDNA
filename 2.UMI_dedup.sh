@@ -2,8 +2,8 @@
 
 source ~/.bashrc
 
-sample_name=$1
-#sample_name="409_050_DCB94_AGGCAGAA-CTCTCTAT_L001"
+#sample_name=$1
+sample_name="409_004_combined"
 
 printf "\n\n"
 echo "sample name is $sample_name"
@@ -26,7 +26,7 @@ mkdir -p $stats_dir
 cd $in_dir
 
 # call snk conda env for samtools/python:
-conda activate snkenv
+conda activate gen
 
 
 ##################################################################################################################################
