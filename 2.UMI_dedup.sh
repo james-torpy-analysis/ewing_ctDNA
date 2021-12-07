@@ -2,8 +2,8 @@
 
 source ~/.bashrc
 
-#sample_name=$1
-sample_name="409_004_combined"
+sample_name=$1
+#sample_name="409_004_combined"
 
 printf "\n\n"
 echo "sample name is $sample_name"
