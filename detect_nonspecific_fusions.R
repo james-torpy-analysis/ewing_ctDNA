@@ -4,7 +4,7 @@ args = commandArgs(trailingOnly=TRUE)
 projectname <- args[1]
 samplename <- args[2]
 projectname <- "ewing_ctDNA"
-samplename <- "409_012_combined" 
+samplename <- "409_009_combined" 
 
 home_dir <- "/share/ScratchGeneral/jamtor"
 #home_dir <- "/Users/torpor/clusterHome"
@@ -34,93 +34,24 @@ min_overlap_R1 <- 19
 min_overlap_R2 <- 19
 
 # define fusion grs and orientations:
-fusion_gr <- list(
-  EWSR1_FLI1=list(
-    EWSR1=GRanges(
-      seqnames="chr22",
-      ranges=IRanges(start=29664257, end=29696511),
-      strand="*" ),
-    FLI1=GRanges(
-      seqnames="chr11",
-      ranges=IRanges(start=128556430, end=128683162),
-      strand="*" )),
-  EWSR1_ETV1=list(
-    EWSR1=GRanges(
-      seqnames="chr22",
-      ranges=IRanges(start=29664257, end=29696511),
-      strand="*" ),
-    ETV1=GRanges(
-      seqnames="chr7",
-      ranges=IRanges(start=13930854, end=14031050),
-      strand="*" )),
-  EWSR1_ERG=list(
-    EWSR1=GRanges(
-      seqnames="chr22",
-      ranges=IRanges(start=29664257, end=29696511),
-      strand="*" ),
-    ERG=GRanges(
-      seqnames="chr21",
-      ranges=IRanges(start=39739183, end=40033707),
-      strand="*" )))
+EWSR1_gr=GRanges(
+  seqnames="chr22",
+  ranges=IRanges(start=29664257, end=29696511),
+  strand="*" )
+
+fusion_orientations <- c(EWSR1="+")
 
 
-## 1) read bam file
+################################################################################
+### 1. Load split reads ###
+################################################################################
 
-file_bam <- file.path(bam_dir,samplename, 
-  paste0(samplename, ".dedup.sorted.by.coord.bam") )
-
-print(paste0("Reading and filtering bam file ", file_bam, "..."))
-
-what <- c("qname", "flag", "rname", "strand", "pos", "qwidth", "mapq", "cigar",
-  "mrnm", "mpos", "isize", "seq","qual" )
-
-param <- ScanBamParam(flag = scanBamFlag(isUnmappedQuery = F), what = what)
-
-ga <- readGAlignments(file_bam, use.names = TRUE, param = param)
-gr <- granges(ga, use.mcols = TRUE)
-
-## check all reads paired
-stopifnot(all(mcols(gr)$flag %% 2 >= 1))
-
-## check no unmapped reads
-stopifnot(all(mcols(gr)$flag %% 8 < 4))
-
-## check no multi-mappers
-stopifnot(all(mcols(gr)$flag %% 512 < 256))
-
-## add whether alignment is for first or second read in template
-mcols(gr)$R1 <- mcols(gr)$flag %% 128 >= 64
-mcols(gr)$R2 <- mcols(gr)$flag %% 256 >= 128
-stopifnot(all(mcols(gr)$R1 + mcols(gr)$R2 == 1L))
-
-## extract R1 + R2
-## R1 ~ gene-specific primer
-## R2 ~ universal primer
-tmp  <- gr[mcols(gr)$R1]
-mcols(tmp) <- NULL
-R1 <- split(tmp, names(tmp))
-tmp  <- gr[mcols(gr)$R2]
-mcols(tmp) <- NULL
-R2 <- split(tmp, names(tmp))
-
-# save as RDS:
-saveRDS(gr, paste0(Robject_dir, "filtered_reads.Rdata"))
+split_reads <- readRDS(file.path(Robject_dir, "split_reads.rds"))
+split_R1 <- split_reads[[1]]
+split_R2 <- split_reads[[2]]
 
 
-## 2) detect fusions
 
-print("Detecting all fusions...")
-
-# find fusion supporting split reads:
-split_R1 <- R1[lengths(range(R1)) == 2L]
-split_R2 <- R2[lengths(range(R2)) == 2L]
-saveRDS(list(split_R1=split_R1, split_R2=split_R2), 
-  file.path(Robject_dir, "split_reads.rds"))
-
-## require that primary and supp alignments are on the same strand, to filter out
-## weird fusions e.g. upstream of EWSR1 joined to upstream of FLI1:
-#split_R1 <- split_R1[sapply(split_R1, function(x) length(unique(strand(x))) == 1)]
-#split_R2 <- split_R2[sapply(split_R2, function(x) length(unique(strand(x))) == 1)]
 
 for (j in seq_along(fusion_gr)) {
   # set up cluster for parLapply:
@@ -179,21 +110,24 @@ print("Filtering fusions and calculating VAFs...")
 for (j in seq_along(all_fusions)) {
   if (length(all_fusions[[j]]) >= 1) {
     ## add orientation for identified translocations
-    strand(all_fusions[[j]]) <- "+"
-    mcols(all_fusions[[j]])$join_strand <- "+"
+    strand(all_fusions[[j]]) <- fusion_orientations[1]
+    mcols(all_fusions[[j]])$join_strand <- fusion_orientations[1]
 
     # filter fusions and calculate VAFs:
     fgenes <- strsplit(names(all_fusions)[j], "_")[[1]]
-    VAFs <- filter_and_VAF(fusions_gr=all_fusions[[j]], gene_a_name=fgenes[1], 
-      gene_b_name=fgenes[2], hist_dir, out_bam_dir )
-
+    VAFs <- filter_and_VAF(fusions_gr=all_fusions[[j]], gene_a_name = fgenes[1], 
+      gene_b_name = fgenes[2], hist_dir, out_bam_dir )
+    
     # collate VAFs as df:
     VAF_df <- do.call("rbind", VAFs)
+    # remove reverse fusions for now:
+    VAF_df <- subset(VAF_df, 
+      select = -c(VAF_rev, Reverse_supporting, Reverse_non_supporting, Reverse_total) )
     # remove fusions with no supporting reads:
-    VAF_df <- VAF_df[VAF_df$All_supporting != 0,]
+    VAF_df <- VAF_df[VAF_df$Forward_supporting != 0,]
     if (nrow(VAF_df) > 0) {
       # order by forward supporting read number:
-      VAF_df <- VAF_df[order(VAF_df$All_supporting),]
+      VAF_df <- VAF_df[order(VAF_df$Forward_supporting),]
       # add fusion type column and bind dfs:
       VAF_df$Fusion_type <- names(all_fusions)[j]
       if (exists("all_VAF")) {
@@ -204,7 +138,7 @@ for (j in seq_along(all_fusions)) {
 print("Saving VAFs...")
 
 if (exists("all_VAF")) {
-  write.table(all_VAF, file.path(out_path, "VAF.tsv"), sep = "\t", quote = F, 
+  write.table(all_VAF, paste0(out_path, "VAF.tsv"), sep = "\t", quote = F, 
     row.names = T, col.names = T )
   saveRDS(all_VAF, file.path(Robject_dir, "VAF.rds"))
 } else {

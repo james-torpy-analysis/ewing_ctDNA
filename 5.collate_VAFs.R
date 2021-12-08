@@ -49,6 +49,7 @@ VAFs <- lapply(summary_df$Library_id, function(x) {
         Forward_supporting = "not_detected",
         Forward_non_supporting = "not_detected",
         Forward_total = "not_detected",
+        Fusion_type = "not_detected",
         Library_id = x
       )
       rownames(VAF) <- x

@@ -12,9 +12,9 @@ detection_dir <- paste0(project_dir, "results/detection_heatmaps/")
 Robject_dir <- paste0(detection_dir, "/Rdata/")
 plot_dir <- paste0(VAF_dir, "plots/")
 
-dir.create(func_dir)
-dir.create(Robject_dir)
-dir.create(plot_dir)
+dir.create(func_dir, recursive=T)
+dir.create(Robject_dir, recursive=T)
+dir.create(plot_dir, recursive=T)
 
 library(dplyr)
 library(tibble)
