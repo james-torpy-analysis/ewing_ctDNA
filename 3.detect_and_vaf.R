@@ -1,10 +1,11 @@
+#!/share/ClusterShare/thingamajigs/jamtor/local/lib/miniconda3/envs/ewing_ctDNA/bin/Rscript
 
 args = commandArgs(trailingOnly=TRUE)
 
 projectname <- args[1]
 samplename <- args[2]
 projectname <- "ewing_ctDNA"
-samplename <- "409_012_combined" 
+samplename <- "409_004_combined"
 
 home_dir <- "/share/ScratchGeneral/jamtor"
 #home_dir <- "/Users/torpor/clusterHome"
@@ -32,6 +33,10 @@ source(file.path(func_dir, "vaf_functions.R"))
 
 min_overlap_R1 <- 19
 min_overlap_R2 <- 19
+max_suppl_dist <- 10  # supplementary reads must fall within this no. nt for read
+# to be counted as supporting
+min_suppl_reads <- 2  # minimum supplementary (split) reads required to call 
+# a supporting read in absence of discordant (non-split) alignments
 
 # define fusion grs and orientations:
 fusion_gr <- list(
@@ -62,7 +67,7 @@ fusion_gr <- list(
       seqnames="chr21",
       ranges=IRanges(start=39739183, end=40033707),
       strand="*" )))
-
+gene_orients <- c(EWSR1_FLI1="++", EWSR1_ETV1="+-", EWSR1_ERG="+-")
 
 ## 1) read bam file
 
@@ -85,6 +90,10 @@ stopifnot(all(mcols(gr)$flag %% 2 >= 1))
 ## check no unmapped reads
 stopifnot(all(mcols(gr)$flag %% 8 < 4))
 
+## remove reads with unmapped mates
+gr <- gr[mcols(gr)$flag %% 16 < 8]
+stopifnot(all(mcols(gr)$flag %% 16 < 8))
+
 ## check no multi-mappers
 stopifnot(all(mcols(gr)$flag %% 512 < 256))
 
@@ -97,14 +106,14 @@ stopifnot(all(mcols(gr)$R1 + mcols(gr)$R2 == 1L))
 ## R1 ~ gene-specific primer
 ## R2 ~ universal primer
 tmp  <- gr[mcols(gr)$R1]
-mcols(tmp) <- NULL
+mcols(tmp) <- subset(mcols(tmp), select=flag)
 R1 <- split(tmp, names(tmp))
 tmp  <- gr[mcols(gr)$R2]
-mcols(tmp) <- NULL
+mcols(tmp) <- subset(mcols(tmp), select=flag)
 R2 <- split(tmp, names(tmp))
 
 # save as RDS:
-saveRDS(gr, paste0(Robject_dir, "filtered_reads.Rdata"))
+saveRDS(gr, file.path(Robject_dir, "filtered_reads.Rdata"))
 
 
 ## 2) detect fusions
@@ -117,42 +126,45 @@ split_R2 <- R2[lengths(range(R2)) == 2L]
 saveRDS(list(split_R1=split_R1, split_R2=split_R2), 
   file.path(Robject_dir, "split_reads.rds"))
 
-## require that primary and supp alignments are on the same strand, to filter out
-## weird fusions e.g. upstream of EWSR1 joined to upstream of FLI1:
-#split_R1 <- split_R1[sapply(split_R1, function(x) length(unique(strand(x))) == 1)]
-#split_R2 <- split_R2[sapply(split_R2, function(x) length(unique(strand(x))) == 1)]
+# save as bams:
+writeSam(file_bam, names(split_R1), file.path(out_bam_dir, "split_R1s.sam"))
+writeSam(file_bam, names(split_R2), file.path(out_bam_dir, "split_R2s.sam"))
 
 for (j in seq_along(fusion_gr)) {
+
+  print(paste0("Detecting ", names(fusion_gr)[j], " fusions..."))
+
   # set up cluster for parLapply:
   cl <- makePSOCKcluster(7)
   clusterExport(cl, c("fusion_gr", "j"))
   clusterEvalQ(cl, library(GenomicAlignments))
 
   # find fusion supporting split R1s:
+  print("Finding fusion supporting R1s...")
   fusion_R1 <- parSapply(cl, split_R1, function (x) {
     i1 <- which(x %over% fusion_gr[[j]][[1]])
     i2 <- which(x %over% fusion_gr[[j]][[2]])
     if (length(i1) == 0 || length(i2) == 0) {
-        return()
+      return()
     } else {
-      paste(as.character(flank(x[i1], 1, FALSE)), 
-        as.character(flank(x[i2], 1, TRUE)) )}})
+      paste(as.character(flank(x[i1], 1, FALSE)), as.character(flank(x[i2], 1, TRUE)) )}})
   fusion_R1 <- unlist(fusion_R1)
   
   # find fusion supporting split R2s:
+  print("Finding fusion supporting R2s...")
   fusion_R2 <- parSapply(cl, split_R2, function (x) {
     i1 <- which(x %over% fusion_gr[[j]][[1]])
     i2 <- which(x %over% fusion_gr[[j]][[2]])
     if (length(i1) == 0 || length(i2) == 0) {
-        return()
+      return()
     } else {
-      paste(as.character(flank(x[i1], 1, TRUE)),
-          as.character(flank(x[i2], 1, FALSE)) )}})
+      paste(as.character(flank(x[i1], 1, TRUE)), as.character(flank(x[i2], 1, FALSE)) )}})
   fusion_R2 <- unlist(fusion_R2)
 
   stopCluster(cl)
     
   # keep only unique fusions:
+  print("Removing fusion entry duplicates...")
   fusion_list <- as.list(unique(c(gsub(":\\+|:\\-", ":\\*", fusion_R1), gsub(":\\+|:\\-", ":\\*", fusion_R2))))
   fusions <- lapply(fusion_list, function(x) {
     spl <- strsplit(x, " ")[[1]]
@@ -171,7 +183,7 @@ for (j in seq_along(fusion_gr)) {
 names(all_fusions) <- names(fusion_gr)
 
 
-## 2) filter fusions and calculate VAFs
+## 3) filter fusions and calculate VAFs
 
 print("Filtering fusions and calculating VAFs...")
 
@@ -179,13 +191,13 @@ print("Filtering fusions and calculating VAFs...")
 for (j in seq_along(all_fusions)) {
   if (length(all_fusions[[j]]) >= 1) {
     ## add orientation for identified translocations
-    strand(all_fusions[[j]]) <- "+"
-    mcols(all_fusions[[j]])$join_strand <- "+"
+    strand(all_fusions[[j]]) <- substring(gene_orients[j], 1, 1)
+    mcols(all_fusions[[j]])$join_strand <- substring(gene_orients[j], 2, 2)
 
     # filter fusions and calculate VAFs:
     fgenes <- strsplit(names(all_fusions)[j], "_")[[1]]
-    VAFs <- filter_and_VAF(fusions_gr=all_fusions[[j]], gene_a_name=fgenes[1], 
-      gene_b_name=fgenes[2], hist_dir, out_bam_dir )
+    VAFs <- filter_and_VAF(fusions_gr=all_fusions[[j]], max_suppl_dist, min_suppl_reads,
+      gene_a_name=fgenes[1], gene_b_name=fgenes[2], R1, R2, hist_dir, out_bam_dir )
 
     # collate VAFs as df:
     VAF_df <- do.call("rbind", VAFs)
@@ -198,16 +210,19 @@ for (j in seq_along(all_fusions)) {
       VAF_df$Fusion_type <- names(all_fusions)[j]
       if (exists("all_VAF")) {
         all_VAF <- rbind(all_VAF, VAF_df)
-      } else {
-        all_VAF <- VAF_df }}}}
+        # reorder VAF df:
+        all_VAF <- subset(all_VAF, select=c("Fusion_type", "Fusion", "VAF_forward", 
+          "VAF_up_to_upstream", "VAF_reverse", "VAF_down_to_downstream", 
+          "Forward_non_supporting", "Forward_supporting", "Forward_total", 
+          "Up_to_upstream_supporting", "Up_to_upstream_total", "Reverse_non_supporting", 
+          "Down_to_upstream_supporting", "Down_to_upstream_total", 
+          "Down_to_downstream_supporting", "Down_to_downstream_total", "All_supporting" ))
+      } else {all_VAF <- VAF_df } }}}
 
 print("Saving VAFs...")
 
 if (exists("all_VAF")) {
-  write.table(all_VAF, file.path(out_path, "VAF.tsv"), sep = "\t", quote = F, 
-    row.names = T, col.names = T )
+  write.table(all_VAF, file.path(out_path, "VAF.tsv"), sep="\t", quote=F, 
+    row.names=T, col.names=T)
   saveRDS(all_VAF, file.path(Robject_dir, "VAF.rds"))
-} else {
-  ## create output file for snakemake
-  all_VAF <- NULL
-  saveRDS(all_VAF, file.path(Robject_dir, "VAF.rds")) }
+} else { saveRDS(NULL, file.path(Robject_dir, "VAF.rds")) } # for snakemake

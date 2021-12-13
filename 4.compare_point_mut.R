@@ -16,12 +16,9 @@ system(paste0("mkdir -p ", plot_dir))
 system(paste0("mkdir -p ", table_dir))
 system(paste0("mkdir -p ", Robject_dir))
 
-library(ggplot2)
 library(rtracklayer)
 library(GenomicAlignments)
 library(tibble)
-library(cowplot)
-library(ggrepel)
 library(plyr)
 
 fetch_sm_vafs <- dget(paste0(func_dir, "fetch_sm_vafs.R"))
@@ -92,7 +89,8 @@ final_df <- subset(final_vars,
     Sanger_STAG2_point_mut, smCounter2_STAG2_point_mut, ddPCR_STAG2_VAF, 
     GeneGlobe_STAG2_VAF, smCounter2_STAG2_VAF, smCounter2_STAG2_effect_size, 
     smCounter2_STAG2_UMT, smCounter2_STAG2_VMT, smCounter2_STAG2_qual, 
-    Pathology_EWSR1_FLI1, Reads, UMIs, Reads_per_UMI ) )
+    EWSR1_FLI1_pathology, EWSR1_ETV1_pathology, EWSR1_ERG_pathology, Reads, UMIs, 
+    Reads_per_UMI ) )
 
 # sort by original metadata order:
 final_df <- final_df[match(meta$Sample_id, final_df$Sample_id),]
