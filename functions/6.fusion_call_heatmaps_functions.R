@@ -1,7 +1,8 @@
 mutation_heatmap <- function(
   fusion_df,
   type,
-  hm_cols
+  detection_cols,
+  path_cols
 ) {
   
   library(naturalsort)
@@ -27,6 +28,7 @@ mutation_heatmap <- function(
   VAF_df$mutation_VAF <- apply(fusion_df, 1, function(x) {
     x <- x[grep("VAF", names(x))]
     x <- x[grep("GeneGlobe", names(x), invert=T)]
+    x <- x[grep("ddPCR", names(x), invert=T)]
     x <- x[grep("not_detected", x, invert=T)]
     
     if (length(x) > 0) {
@@ -48,9 +50,10 @@ mutation_heatmap <- function(
     }
     
   })
+  VAF_df$mutation_VAF <- gsub("_forward|_reverse", "", VAF_df$mutation_VAF)
   
   detect_df <- VAF_df
-  
+
   # annotate detected/not_detected values:
   detect_df$mutation_VAF[detect_df$mutation_VAF == ""] <- "not_detected"
   detect_df$mutation_VAF[detect_df$mutation_VAF != "not_detected"] <- "detected"
@@ -63,102 +66,97 @@ mutation_heatmap <- function(
   
   # make rownames patient ids and add pathology column:
   rownames(VAF_df) <- VAF_df$Patient_id
-  VAF_df$pathology <- ""
-  VAF_df <- VAF_df[
-    ,colnames(VAF_df) %in% 
-      c("pathology", unique(as.character(fusion_df$Treatment.dilution))) ]
+  VAF_df$fusion_pathology <- ""
+  VAF_df$pointmut_pathology <- ""
+  VAF_df <- VAF_df[,colnames(VAF_df) %in% 
+      c("fusion_pathology", "pointmut_pathology", 
+      unique(as.character(fusion_df$Treatment.dilution)) )]
   VAF_df <- VAF_df %>%
-    select(pathology, everything())
+    select(fusion_pathology, pointmut_pathology, everything())
   
-  # # merge pathology columns:
-  # temp_path <- fusion_df[, grep("pathology", colnames(fusion_df))]
-  # fusion_df$all_pathology <- apply(temp_path, 1, function(x) {
-  #   fus <- names(x)[which(x != "not_detected")]
-  #   if (length(fus) == 1) {return(fus)} else {return(x[1])} })
+  # merge pathology columns:
+  fusion_path <- fusion_df[, grep("pathology", colnames(fusion_df))]
+  fusion_df$fusion_pathology <- apply(fusion_path, 1, function(x) {
+    fus <- names(x)[which(x != "not_detected")]
+    if (length(fus) == 1) {return(fus)} else {return(x[1])} })
+  fusion_df$fusion_pathology <- gsub("rearrangement|translocation", 
+    "SV_pathology", fusion_df$fusion_pathology)
   
+  pointmut_path <- fusion_df[, grep("Sanger", colnames(fusion_df))]
+  fusion_df$pointmut_pathology <- apply(pointmut_path, 1, function(x) {
+    pointmut <- names(x)[which(x != "not_detected")]
+    if (length(pointmut) == 1) {
+      return(paste0(gsub("Sanger_|_point_mut", "", pointmut), "_pathology"))
+    } else if (length(pointmut) == 0) {return(x[1])} else {
+      return("both_point_mut_pathology")
+    } })
+
   # merge pathology results with dfs:
-  rownames(detect_df) <- detect_df$Patient_id
-  detect_df <- subset(detect_df, select = -Patient_id)
-  path_df <- cbind(
-    subset(fusion_df, select = c(Patient_id, Sanger_TP53_point_mut, 
-    Sanger_STAG2_point_mut)), 
-    fusion_df[,grep("pathology", colnames(fusion_df))] )
-  path_df <- path_df[!duplicated(path_df$Patient_id),]
-  
-  # if were are any mutations picked up, indicate "pathology_detection":
-  path_df$pathology <- "no_pathology_detection"
-  path_df$pathology[apply(
-    subset(path_df, select = -c(Patient_id, pathology)), 1, function(x) {
-      any(x != "not_detected")
-    })] <- "pathology_detection"
-  path_df$pathology[apply(
-    subset(path_df, select = -c(Patient_id, pathology)), 1, function(x) {
-      all(is.na(x))
-    })] <- "no_sample"
-  
-  # order as in detect_df:
-  path_df <- path_df[match(rownames(detect_df), path_df$Patient_id),]
-  rownames(path_df) <- path_df$Patient_id
-  path_df <- subset(path_df, select = pathology)
-  
+  path_df <- subset(fusion_df, select = c(Patient_id, fusion_pathology, 
+    pointmut_pathology ))
+  path_df <- path_df[!duplicated(path_df),]
+
   # bind to detect_df:
-  detect_df <- cbind(path_df, detect_df)
-  
+  detect_df <- merge(path_df, detect_df, by="Patient_id")
+  detect_df <- column_to_rownames(detect_df, "Patient_id")
+
   # order dfs by name, pathology status, and site:
   if (type == "patient") {
     detect_df <- as.data.frame(
       detect_df[naturalorder(gsub("^.*_|M0|P", "", rownames(detect_df))),] )
-    detect_df$pathology <- factor(detect_df$pathology, 
-                                  levels = c("pathology_detection", "no_pathology_detection", "no_sample") ) 
-    detect_df <- detect_df[order(detect_df$pathology),]
-    detect_df$Site <- factor(
-      detect_df$Site, levels = c("primary", "met", "unknown") )
+    detect_df <- arrange(detect_df, fusion_pathology, pointmut_pathology)
+    detect_df$Site <- factor(detect_df$Site, levels=c("primary", "met", "unknown"))
     detect_df <- detect_df[order(detect_df$Site),]
-  } else {
-    detect_df <- detect_df[order(rownames(detect_df)),]
-  }
+  } else {detect_df <- detect_df[order(rownames(detect_df)),]}
   
   # define site(row) and pathology(column) split vectors:
-  if (type == "patient") {
-    met_split <- detect_df$Site
-  }
+  if (type == "patient") {met_split <- detect_df$Site}
   path_split <- factor(
-    c("path", rep("non_path", length(unique(fusion_df$Treatment.dilution)))),
+    c(rep("path", 2), rep("non_path", length(unique(fusion_df$Treatment.dilution)))),
     levels = c("path", "non_path") )
   detect_df <- subset(detect_df, select = -Site)
   
   VAF_df <- VAF_df[match(rownames(detect_df), rownames(VAF_df)),]
   
   # make NAs 'no_sample':
-  detect_df <- apply(detect_df, 2, function(x) {
+  detect_df <- as.data.frame(apply(detect_df, 2, function(x) {
     x[is.na(x)] <- "no_sample"
     return(x)
-  })
+  }))
+  
+  # name detection colours:
+  path_names <- unique(c(detect_df$fusion_pathology, detect_df$pointmut_pathology))
+  path_names <- path_names[grep("pathology", path_names)]
+  path_cols <- path_cols[1:length(path_names)]
+  names(path_cols) <- path_names
+  hm_cols <- c(detection_cols, path_cols)
   
   # remove underscores:
+  detect_df <- as.data.frame(gsub("_", " ", as.matrix(detect_df)))
   rownames(detect_df) <- gsub("_", " ", rownames(detect_df))
-  detect_df <- gsub("_", " ", detect_df)
+  colnames(detect_df) <- gsub("_", " ", colnames(detect_df))
   names(hm_cols) <- gsub("_", " ", names(hm_cols))
   
   # make NAs blank:
   VAF_df <- apply(VAF_df, 2, function(x) {
     x[is.na(x)] <- ""
-    return(x)
-  })
-  
+    return(x) })
+
   if (type == "dilution") {
     # order by dilution level:
     detect_df <- detect_df[, 
-      c("pathology", unique(fusion_df$Treatment.dilution)) ]
+      c("fusion pathology", "pointmut pathology", unique(fusion_df$Treatment.dilution)) ]
     VAF_df <- VAF_df[,
-      c("pathology", unique(fusion_df$Treatment.dilution)) ]
+      c("fusion_pathology", "pointmut_pathology", unique(fusion_df$Treatment.dilution)) ]
     # add percentages to dilutions:
-    colnames(detect_df)[colnames(detect_df) != "pathology"] <- paste0(
-      colnames(detect_df)[colnames(detect_df) != "pathology"], "%" )
-    colnames(VAF_df)[colnames(VAF_df) != "pathology"] <- paste0(
-      colnames(VAF_df)[colnames(VAF_df) != "pathology"], "%" )
-  }
-  
+    colnames(detect_df)[colnames(detect_df) != "fusion pathology" & 
+      colnames(detect_df) != "pointmut pathology"] <- paste0(
+      colnames(detect_df)[colnames(detect_df) != "fusion pathology" & 
+      colnames(detect_df) != "pointmut pathology"], "%" )
+    colnames(VAF_df)[colnames(VAF_df) != "fusion pathology" & 
+      colnames(VAF_df) != "pointmut pathology"] <- paste0(
+      colnames(VAF_df)[colnames(VAF_df) != "fusion pathology" & 
+      colnames(VAF_df) != "pointmut pathology"], "%" ) }
   # create VAF heatmap:
   if (type == "patient") {
     VAF_hm <- Heatmap(
@@ -173,9 +171,10 @@ mutation_heatmap <- function(
       column_title_gp = gpar(fontsize = 18, fontface = "bold"),
       cell_fun = function(j, i, x, y, width, height, fill) {
         grid.text(
-          VAF_df[i, j], x, y, 
+          VAF_df[i, j], x, y,
           gp = gpar(fontsize = 7.5, fontface = "bold", col = "#991425") )
-      }, )
+      }
+    )
   } else {
     VAF_hm <- Heatmap(
       as.matrix(detect_df), 
@@ -194,45 +193,58 @@ mutation_heatmap <- function(
       }, )
   }
   
+  # merge pathology columns:
+  temp_supp <- fusion_df[, grep("forward_supporting", colnames(fusion_df))]
+  fusion_df$all_forward_supporting <- apply(temp_supp, 1, function(x) {
+    supp <- x[which(x != "not_detected")]
+    if (length(supp) == 1) {
+      return(paste0(gsub("_forward_supporting", "", names(supp)), ": ", supp))
+    } else if (length(supp) == 0) {return(x[1])
+    } else {
+      print("Error: multiple fusions detected when there should only be one, check data")
+    } })
+
   # create supporting read annotation:
   supp_df <- subset(fusion_df, select = c(Patient_id, Site, Treatment.dilution,
-    Forward_supporting ))
+    fusion_pathology, all_forward_supporting ))
   
   # make NA or not detected values blank:
-  supp_df$Forward_supporting[
-    is.na(supp_df$Forward_supporting) | supp_df$Forward_supporting == "not_detected"
-  ] <- " "
+  supp_df$all_forward_supporting[
+    is.na(supp_df$all_forward_supporting) | 
+    supp_df$all_forward_supporting == "not_detected" ] <- " "
   
   # cast to wide format:
-  supp_df <- dcast(
-    supp_df, Patient_id + Site ~Treatment.dilution, value.var = "Forward_supporting" )
+  supp_df <- dcast(supp_df, Patient_id + Site + fusion_pathology ~Treatment.dilution, 
+    value.var = "all_forward_supporting" )
   
   if (type == "dilution") {
     # add percentages to dilutions:
-    colnames(supp_df)[!(colnames(supp_df) %in% c("Patient_id", "Site"))] <- paste0(
-      colnames(supp_df)[!(colnames(supp_df) %in% c("Patient_id", "Site"))], "%" )
-  }
+    colnames(supp_df)[!(colnames(supp_df) %in% 
+      c("Patient_id", "Site", "fusion_pathology"))] <- paste0(
+      colnames(supp_df)[!(colnames(supp_df) %in% 
+        c("Patient_id", "Site", "fusion_pathology"))], "%" ) }
   
   # make rownames patient ids and add pathology column:
   rownames(supp_df) <- supp_df$Patient_id
-  supp_df$pathology <- " "
   supp_df <- subset(supp_df, select = -c(Patient_id, Site))
   
   # remove underscores:
   rownames(supp_df) <- gsub("_", " ", rownames(supp_df))
+  colnames(supp_df) <- gsub("_", " ", colnames(supp_df))
   
   # order df:
   supp_df <- supp_df[match(rownames(detect_df), rownames(supp_df)), 
-    match(colnames(detect_df), colnames(supp_df)) ]
+    match(colnames(detect_df)[
+      grep("pointmut pathology", colnames(detect_df), invert=T )], colnames(supp_df)) ]
   
-  # make NAs blank:
+  # make NAs and pathology columns blank:
   supp_df <- apply(supp_df, 2, function(x) {
     x[is.na(x)] <- " "
-    return(x)
-  })
-  
+    x[grep("pathology", x)] <- " "
+    return(x) })
+
   # remake detection to include only fusions:
-  supp_detect <- detect_df
+  supp_detect <- detect_df[,grep("pointmut pathology", colnames(detect_df), invert=T)]
   supp_detect[supp_df == " " & supp_detect == "detected"] <- "not detected"
   
   # create supporting reads heatmap:
@@ -241,36 +253,30 @@ mutation_heatmap <- function(
       as.matrix(supp_detect), 
       name = "Fusion-supporting reads", 
       row_split = met_split,
-      column_split = path_split,
       col = hm_cols,
       border = "black",
       rect_gp = gpar(col = "black", lwd = 1),
-      column_title = "Patient EWSR1/FLI1 fusion-supporting reads",
-      column_title_gp = gpar(fontsize = 18, fontface = "bold"),
+      column_title = "Patient fusion-supporting reads",
+      column_title_gp = gpar(fontsize = 16, fontface = "bold"),
       cell_fun = function(j, i, x, y, width, height, fill) {
         grid.text(
           supp_df[i, j], x, y, 
-          gp = gpar(fontsize = 12, fontface = "bold", col = "#430F82") )
-      },
-    )
+          gp = gpar(fontsize = 12, fontface = "bold", col = "#430F82") )})
   } else {
     sread_hm <- Heatmap(
       as.matrix(supp_detect), 
-      name = "Fusion-supporting reads", 
-      column_split = path_split,
+      name = "Fusion-supporting reads",
       col = hm_cols,
       border = "black",
       rect_gp = gpar(col = "black", lwd = 1),
-      column_title = "Patient EWSR1/FLI1 fusion-supporting reads",
+      column_title = "Cell line fusion-supporting reads",
       column_title_gp = gpar(fontsize = 18, fontface = "bold"),
       column_names_rot = 0,
       cell_fun = function(j, i, x, y, width, height, fill) {
         grid.text(
           supp_df[i, j], x, y, 
-          gp = gpar(fontsize = 12, fontface = "bold", col = "#430F82") )
-      },
-    )
-  }
+          gp = gpar(fontsize = 12, fontface = "bold", col = "#430F82") )})}
+
 
   # return heatmaps:
   return(list(VAF=VAF_hm, sread=sread_hm))

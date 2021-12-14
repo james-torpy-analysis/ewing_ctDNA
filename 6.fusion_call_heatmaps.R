@@ -4,7 +4,7 @@ home_dir <- "/share/ScratchGeneral/jamtor/"
 project_dir <- paste0(home_dir, "projects/ewing_ctDNA/")
 ref_dir <- paste0(project_dir, "refs/")
 
-func_dir <- paste0(project_dir, "scripts/functions/5.fusion_call_heatmaps/")
+func_dir <- paste0(project_dir, "scripts/functions/")
 fusion_dir <- paste0(project_dir, "results/fusions/")
 VAF_dir <- paste0(project_dir, "results/VAF_calculation/")
 
@@ -19,21 +19,17 @@ dir.create(plot_dir, recursive=T)
 library(dplyr)
 library(tibble)
 library(naturalsort)
+library(RColorBrewer)
 
 
 ####################################################################################
 ### 0. Load functions and colours ###
 ####################################################################################
 
-fetch_fusion_no <- dget(paste0(func_dir, "fetch_fusion_no.R"))
-mutation_heatmap <- dget(paste0(func_dir, "mutation_heatmap.R") )
+source(file.path(func_dir, "6.fusion_call_heatmaps_functions.R"))
 
-hm_cols <- c(
-  pathology_detection = "#75EA3D",
-  no_pathology_detection = "#58B9DB",
-  detected = "#F4D30B",
-  not_detected = "black",
-  no_sample = "grey" )
+detection_cols <- c(detected="#F4D30B", not_detected="black", no_sample="grey")
+path_cols <- brewer.pal(9, "Set1")[-6]
 
 annot_cols <- c(
   VAF = "#991425",
@@ -76,12 +72,14 @@ cl_df <- cl_df[order(cl_df$Patient_id),]
 patient_heatmaps <- mutation_heatmap(
   fusion_df = patient_df,
   type = "patient",
-  hm_cols )
+  detection_cols,
+  path_cols )
 
 cl_heatmaps <- mutation_heatmap(
   fusion_df = cl_df,
   type = "dilution",
-  hm_cols )
+  detection_cols,
+  path_cols )
 
 all_heatmaps <- c(patient_heatmaps, cl_heatmaps)
 names(all_heatmaps) <- c(
@@ -101,7 +99,7 @@ for (i in seq_along(all_heatmaps)) {
     
     png(
       paste0(plot_dir, names(all_heatmaps)[i], "_annotated.png"),
-      width = 14.5,
+      width = 19,
       height = 9,
       unit = "in",
       res = 300
@@ -109,26 +107,28 @@ for (i in seq_along(all_heatmaps)) {
     annot_y <-  0.43
     
     if (length(grep("VAF", names(all_heatmaps)[i])) > 0) {
-      annot_x <- 0.798
+      annot_x <- 0.81
     } else {
-      annot_x <- 0.828
+      annot_x <- 0.835
     }
     
   } else {
     
     png(
       paste0(plot_dir, names(all_heatmaps)[i], "_annotated.png"),
-      width = 20,
+      width = 22,
       height = 3,
       unit = "in",
       res = 300
     )
-    annot_y <-  0.41
+    
     
     if (length(grep("VAF", names(all_heatmaps)[i])) > 0) {
-      annot_x <- 0.834
+      annot_x <- 0.826
+      annot_y <-  0.3
     } else {
-      annot_x <- 0.83
+      annot_x <- 0.85
+      annot_y <-  0.33
     }
     
   }
@@ -170,7 +170,7 @@ for (i in seq_along(all_heatmaps)) {
     
     pdf(
       paste0(plot_dir, names(all_heatmaps)[i], "_annotated.pdf"),
-      width = 14.5,
+      width = 18,
       height = 9,
     )
     annot_y <-  0.41
@@ -179,7 +179,7 @@ for (i in seq_along(all_heatmaps)) {
     
     pdf(
       paste0(plot_dir, names(all_heatmaps)[i], "_annotated.pdf"),
-      width = 26,
+      width = 28,
       height = 3,
     )
     annot_y <-  0.37
