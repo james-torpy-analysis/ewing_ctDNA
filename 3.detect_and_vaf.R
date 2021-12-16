@@ -5,7 +5,7 @@ args = commandArgs(trailingOnly=TRUE)
 projectname <- args[1]
 samplename <- args[2]
 projectname <- "ewing_ctDNA"
-samplename <- "409_004_combined"
+samplename <- "409_040_DCKVC_GGACTCCT-CTCTCTAT_L001"
 
 home_dir <- "/share/ScratchGeneral/jamtor"
 #home_dir <- "/Users/torpor/clusterHome"
@@ -68,6 +68,7 @@ fusion_gr <- list(
       ranges=IRanges(start=39739183, end=40033707),
       strand="*" )))
 gene_orients <- c(EWSR1_FLI1="++", EWSR1_ETV1="+-", EWSR1_ERG="+-")
+
 
 ## 1) read bam file
 

@@ -26,6 +26,10 @@ library(ggrepel)
 
 compare_VAF <- dget(file.path(func_dir, "compare_VAF.R"))
 
+# manually select fusions based on other samples:
+manual_fusion_coords <- list(c(EWSR1=29686033, FLI1=128643126))
+names(manual_fusion_coords) <- "409_051_DCB94_TCCTGAGC-CTCTCTAT_L001"
+
 
 ####################################################################################
 ### 1. Load VAFs ###
@@ -52,6 +56,14 @@ VAFs <- lapply(summary_df$Library_id, function(x) {
     if (nrow(VAF) > 0) {
       VAF <- VAF[order(VAF$All_supporting, decreasing = T),]
       VAF$Library_id <- rep(x, nrow(VAF))
+      # remove detections with no forward supporting reads:
+      VAF[VAF$Forward_supporting==0, grepl("Fusion|orward", colnames(VAF))] <- 
+        "not_detected"
+      if (nrow(VAF) > 1) {
+        if (all(VAF$Forward_supporting=="not_detected")) {
+          VAF <- VAF[1,]
+        } else {
+          VAF <- VAF[VAF$Forward_supporting!="not_detected",] }}
     } else {
       VAF <- data.frame(
         Fusion_type="not_detected",
@@ -83,9 +95,6 @@ VAF_df <- do.call("rbind", VAFs)
 # subset for only forward orientated fusions:
 VAF_df <- subset(VAF_df, select = c(Library_id, Fusion_type, Fusion, VAF_forward,
   Forward_supporting, Forward_non_supporting, Forward_total ) )
-
-# remove entries with no supporting reads:
-VAF_df[VAF_df$Forward_supporting==0, grepl("Fusion|orward", colnames(VAF_df))] <- "not_detected"
 
 # convert fusion VAFs to percentages:
 VAF_df$VAF_forward[is.na(VAF_df$VAF_forward)] <- "not_detected"
@@ -126,11 +135,10 @@ VAF_df <- VAF_df[,order(
 all_VAFs <- merge(summary_df, VAF_df, by="Library_id")
 
 # reorder to group fusion columns together:
-for (i in grep("pathology", colnames(all_VAFs))) {
-  fus <- gsub("_pathology", "", colnames(all_VAFs)[i])
-  all_VAFs <- relocate(all_VAFs, colnames(all_VAFs)[i], 
-    .before=colnames(all_VAFs)[grepl(fus, colnames(all_VAFs)) & 
-    grepl("fusion", colnames(all_VAFs))]) }
+for (cname in grep("pathology", colnames(all_VAFs), value=T)) {
+  all_VAFs <- relocate(all_VAFs, cname, 
+    .before=colnames(all_VAFs)[grepl(gsub("_pathology", "", cname), colnames(all_VAFs)) & 
+    grepl("fusion", colnames(all_VAFs)) ]) }
 
 # remove germline mutations:
 all_VAFs[all_VAFs$smCounter2_TP53_point_mut %in% germline_mutations, 
@@ -162,6 +170,19 @@ write.table(
   col.names = TRUE,
   row.names = FALSE )
 
+# manually select fusions based on other samples:
+for (i in seq_along(manual_fusion_coords)) {
+  # identify fusion to add:
+  sample_ind <- which(all_VAFs$Library_id == names(manual_fusion_coords)[i])
+  fus_col <- all_VAFs[,paste0(names(manual_fusion_coords[[i]])[1], "_", 
+    names(manual_fusion_coords[[i]])[2], "_fusion" )]
+  fus_ind <- which(grepl(manual_fusion_coords[[i]][1], fus_col) & 
+    grepl(manual_fusion_coords[[i]][2], fus_col) )
+  fus_ind <- fus_ind[fus_ind %in% sample_ind]
+  # add fusion to top of df:
+  all_VAFs <- rbind(all_VAFs[fus_ind,], all_VAFs)
+}
+
 # remove secondary deletion rows:
 all_VAFs <- all_VAFs[!duplicated(all_VAFs$Library_id),]
 
@@ -181,12 +202,8 @@ write.table(
 
 scatter_VAF <- merge(summary_df, scatter_VAF, by="Library_id")
 
-colnames(scatter_VAF)[24] <- "EWSR1_FLI1_pathology"
-colnames(scatter_VAF)[25] <- "EWSR1_ETV1_pathology"
-colnames(scatter_VAF)[26] <- "EWSR1_ERG_pathology"
-
 # order rows by no. supporting reads, forward VAF, then forward total:
-#scatter_VAF <- arrange(scatter_VAF, desc(Forward_supporting), desc(VAF_forward))
+scatter_VAF <- arrange(scatter_VAF, desc(Forward_supporting), desc(VAF_forward))
 # remove secondary deletion rows:
 scatter_VAF <- scatter_VAF[!duplicated(scatter_VAF$Library_id),]
 
