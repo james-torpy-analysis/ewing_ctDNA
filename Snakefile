@@ -35,6 +35,8 @@ variant_dir = 'results/smcounter2/'
 # fetch library ids from metadata file:
 meta = pd.read_csv(ref_dir + 'metadata.tsv', sep='\\t', engine='python')
 SAMPLES = list(meta['Library_id'])
+#SAMPLES = list(['409_008_combined', '409_012_combined', '409_031_combined', 
+#    '409_036_DCB94_AAGAGGCA-CTCTCTAT_L001', '409_048_combined', '409_063_combined'])
 
 rule all:
     input:

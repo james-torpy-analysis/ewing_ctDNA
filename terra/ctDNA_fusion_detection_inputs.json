@@ -1,0 +1,7 @@
+{
+  "UMI_dedup.inputBam": "/Users/torpor/Desktop/ewing_ctDNA/results/409_050_DCB94_AGGCAGAA-CTCTCTAT_L001/409_050_DCB94_AGGCAGAA-CTCTCTAT_L001.align.bam",
+  "UMI_dedup.name": "/Users/torpor/Desktop/ewing_ctDNA/results/409_050_DCB94_AGGCAGAA-CTCTCTAT_L001/409_050_DCB94_AGGCAGAA-CTCTCTAT_L001",
+  "UMI_dedup.dedupMetrics": "/Users/torpor/Desktop/ewing_ctDNA/results/409_050_DCB94_AGGCAGAA-CTCTCTAT_L001/409_050_DCB94_AGGCAGAA-CTCTCTAT_L001.dedup_metrics.txt",
+  "UMI_dedup.picard": "/Users/torpor/Desktop/ewing_ctDNA/tools/picard.jar"
+}
+
