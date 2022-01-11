@@ -21,7 +21,7 @@ library(GenomicAlignments)
 library(tibble)
 library(plyr)
 
-fetch_sm_vafs <- dget(paste0(func_dir, "fetch_sm_vafs.R"))
+source(file.path(func_dir, "4.compare_point_mut_functions.R"))
 
 meta <- read.table(paste0(ref_dir, "/metadata.tsv"), header = T)
 

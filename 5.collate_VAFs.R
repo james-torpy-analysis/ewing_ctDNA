@@ -24,7 +24,7 @@ library(ggplot2)
 library(cowplot)
 library(ggrepel)
 
-compare_VAF <- dget(file.path(func_dir, "compare_VAF.R"))
+source(file.path(func_dir, "5.collate_VAFs_functions.R"))
 
 # manually select fusions based on other samples:
 manual_fusion_coords <- list(c(EWSR1=29686033, FLI1=128643126))

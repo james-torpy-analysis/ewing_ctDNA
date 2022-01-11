@@ -29,7 +29,7 @@ func_dir <- file.path(project_dir, "scripts/functions/")
 libs <- c("GenomicAlignments", "Rsamtools", "scales")
 lapply(libs, library, character.only=T)
 
-source(file.path(func_dir, "vaf_functions.R"))
+source(file.path(func_dir, "3.detect_and_vaf_functions.R"))
 
 min_overlap_R1 <- 19
 min_overlap_R2 <- 19
