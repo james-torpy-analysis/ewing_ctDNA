@@ -1,5 +1,6 @@
 projectname <- "ewing_ctDNA"
 germline_mutations <- c("chr17:7578457_G>A")
+min_VAF <- 0.001    # decimal (non-percentage) value
 
 home_dir <- "/share/ScratchGeneral/jamtor/"
 #home_dir <- "/Users/torpor/clusterHome"
@@ -47,13 +48,13 @@ summary_df <- subset(summary_df, select = c(
   Sanger_STAG2_point_mut, smCounter2_STAG2_point_mut, ddPCR_STAG2_VAF, 
   GeneGlobe_STAG2_VAF, smCounter2_STAG2_VAF, smCounter2_STAG2_effect_size,
   smCounter2_STAG2_UMT, smCounter2_STAG2_VMT, smCounter2_STAG2_qual, 
-  Pathology_EWSR1_FLI1, Pathology_EWSR1_ETV1, Pathology_EWSR1_ERG ))
+  EWSR1_FLI1_pathology, EWSR1_ETV1_pathology, EWSR1_ERG_pathology ))
 
 VAFs <- lapply(summary_df$Library_id, function(x) {
   print(x)
   VAF <- as.data.frame(readRDS(file.path(in_path, x, "Rdata/VAF.rds")))
   if (!is.null(VAF)) {
-    if (nrow(VAF) > 0) {
+    if (nrow(VAF) > 0 & any(VAF$VAF_forward >= min_VAF)) {
       VAF <- VAF[order(VAF$All_supporting, decreasing = T),]
       VAF$Library_id <- rep(x, nrow(VAF))
       # remove detections with no forward supporting reads:

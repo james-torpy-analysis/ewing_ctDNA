@@ -62,15 +62,15 @@ fetch_sm_vafs <- function(sample_df, roi, gm_var, reverse_strand=FALSE ) {
     keep_var <- keep_var[keep_var$effect_size > 1]
 
     # remove benign germline variant chr17:7579472_G>C:
-    keep_var <- keep_var[
+    top_var <- keep_var[
       !(start(keep_var) == 7579472 & keep_var$ref == "G" & keep_var$alt == "C") ]
     
-    # keep variants with highest effect size:
-    keep_var <- keep_var[which.max(keep_var$effect_size)]
-    top_var <- keep_var[which.max(keep_var$qual)]
+#    # keep variant with highest effect size:
+#    keep_var <- keep_var[which.max(keep_var$effect_size)]
+#    top_var <- keep_var[which.max(keep_var$qual)]
     
     # change effect size back:
-    top_var$effect_size <- revalue(as.character(keep_var$effect_size), 
+    top_var$effect_size <- revalue(as.character(top_var$effect_size), 
       c("3" = "HIGH", "2" = "MODERATE", "1" = "LOW", "0" = "MODIFIER" ) )
 
     # if reverse strand, convert nucleotides:
